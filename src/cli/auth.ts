@@ -86,55 +86,106 @@ function generateState(): string {
 
 /**
  * 成功頁面 HTML
+ * Design follows UIUX_SPEC.md: minimalist, grayscale, Inter font
  */
 function getSuccessHtml(): string {
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Slima MCP - Authenticated</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome to Slima</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      margin: 0;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      background: #FBFBFA;
+      color: #1D1D1F;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
     .container {
       text-align: center;
-      background: white;
-      padding: 60px;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 48px;
+      max-width: 420px;
     }
-    .checkmark {
-      font-size: 64px;
-      margin-bottom: 20px;
+    .logo {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 32px;
+      opacity: 0.9;
+    }
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 24px;
+      border-radius: 50%;
+      background: #1D1D1F;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .success-icon svg {
+      width: 32px;
+      height: 32px;
+      stroke: #FBFBFA;
     }
     h1 {
-      color: #333;
-      margin-bottom: 10px;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      color: #1D1D1F;
     }
-    p {
-      color: #666;
-      font-size: 16px;
+    .subtitle {
+      font-size: 15px;
+      color: #6E6E73;
+      line-height: 1.5;
+      margin-bottom: 8px;
     }
     .hint {
-      margin-top: 20px;
-      color: #999;
-      font-size: 14px;
+      font-size: 13px;
+      color: #86868B;
+      margin-top: 24px;
+    }
+    .divider {
+      width: 40px;
+      height: 1px;
+      background: #E5E5E5;
+      margin: 32px auto;
+    }
+    .footer {
+      font-size: 12px;
+      color: #86868B;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="checkmark">✅</div>
-    <h1>Authentication Successful!</h1>
-    <p>You can now close this window and return to your terminal.</p>
-    <p class="hint">Slima MCP is ready to use.</p>
+    <img src="https://app.slima.ai/icons/slima-black.svg" alt="Slima" class="logo">
+    <div class="success-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+      </svg>
+    </div>
+    <h1>Welcome to Slima</h1>
+    <p class="subtitle">Authentication successful. Your CLI is now connected.</p>
+    <p class="hint">You can close this window and return to your terminal.</p>
+    <div class="divider"></div>
+    <p class="footer">Slima MCP is ready to use</p>
   </div>
 </body>
 </html>`;
@@ -159,50 +210,118 @@ function escapeHtml(text: string): string {
 
 /**
  * 錯誤頁面 HTML
+ * Design follows UIUX_SPEC.md: minimalist, grayscale, Inter font
  */
 function getErrorHtml(message: string): string {
   const safeMessage = escapeHtml(message);
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Slima MCP - Error</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slima - Authentication Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      margin: 0;
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      min-height: 100vh;
+      background: #FBFBFA;
+      color: #1D1D1F;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
     .container {
       text-align: center;
-      background: white;
-      padding: 60px;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 48px;
+      max-width: 420px;
+    }
+    .logo {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 32px;
+      opacity: 0.9;
     }
     .error-icon {
-      font-size: 64px;
-      margin-bottom: 20px;
+      width: 64px;
+      height: 64px;
+      margin-bottom: 24px;
+      border-radius: 50%;
+      background: #1D1D1F;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .error-icon svg {
+      width: 32px;
+      height: 32px;
+      stroke: #FBFBFA;
     }
     h1 {
-      color: #e74c3c;
-      margin-bottom: 10px;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      color: #1D1D1F;
     }
-    p {
-      color: #666;
-      font-size: 16px;
+    .message {
+      font-size: 15px;
+      color: #6E6E73;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+    .hint {
+      font-size: 13px;
+      color: #86868B;
+      margin-top: 24px;
+    }
+    .divider {
+      width: 40px;
+      height: 1px;
+      background: #E5E5E5;
+      margin: 32px auto;
+    }
+    .retry-link {
+      display: inline-block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #1D1D1F;
+      text-decoration: none;
+      padding: 10px 20px;
+      border: 1px solid #E5E5E5;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+    .retry-link:hover {
+      background: #F5F5F5;
+      border-color: #D5D5D5;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="error-icon">❌</div>
-    <h1>Authentication Failed</h1>
-    <p>${safeMessage}</p>
+    <img src="https://app.slima.ai/icons/slima-black.svg" alt="Slima" class="logo">
+    <div class="error-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </div>
+    <h1>Something went wrong</h1>
+    <p class="message">${safeMessage}</p>
+    <p class="hint">Please close this window and try again from your terminal.</p>
+    <div class="divider"></div>
+    <a href="javascript:window.close()" class="retry-link">Close Window</a>
   </div>
 </body>
 </html>`;
