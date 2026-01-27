@@ -116,6 +116,23 @@ export class SlimaApiClient {
     return this.request<Book>('GET', `/api/v1/books/${token}`);
   }
 
+  /**
+   * 建立新書籍
+   */
+  async createBook(params: {
+    title: string;
+    authorName?: string;
+    description?: string;
+  }): Promise<Book> {
+    return this.request<Book>('POST', '/api/v1/books', {
+      book: {
+        title: params.title,
+        author_name: params.authorName,
+        description: params.description,
+      },
+    });
+  }
+
   // === 版本控制相關 ===
 
   /**

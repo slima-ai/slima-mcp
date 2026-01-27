@@ -15,6 +15,40 @@ export function registerBookTools(
   server: McpServer,
   client: SlimaApiClient
 ): void {
+  // === create_book ===
+  server.tool(
+    'create_book',
+    'Create a new book in your Slima library',
+    {
+      title: z.string().describe('Book title (required)'),
+      author_name: z.string().optional().describe('Author name (optional)'),
+      description: z.string().optional().describe('Book description (optional)'),
+    },
+    async ({ title, author_name, description }) => {
+      try {
+        const book = await client.createBook({
+          title,
+          authorName: author_name,
+          description,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ Book created successfully!\n\n- **Title**: ${book.title}\n- **Token**: ${book.token}\n- **Author**: ${book.authorName || 'N/A'}\n\nYou can now add files using create_file with book_token: ${book.token}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: formatErrorForMcp(error) }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   // === list_books ===
   server.tool(
     'list_books',

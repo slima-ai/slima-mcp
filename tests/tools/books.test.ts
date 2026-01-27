@@ -13,6 +13,7 @@ describe('Book Tools', () => {
     listBooks: ReturnType<typeof vi.fn>;
     getBook: ReturnType<typeof vi.fn>;
     listCommits: ReturnType<typeof vi.fn>;
+    createBook: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -25,6 +26,7 @@ describe('Book Tools', () => {
       listBooks: vi.fn(),
       getBook: vi.fn(),
       listCommits: vi.fn(),
+      createBook: vi.fn(),
     };
   });
 
@@ -35,16 +37,17 @@ describe('Book Tools', () => {
       }).not.toThrow();
     });
 
-    it('should register all 4 book-related tools', () => {
+    it('should register all 5 book-related tools', () => {
       // The server.tool() method is called for each tool
       const toolSpy = vi.spyOn(server, 'tool');
 
       registerBookTools(server, mockClient as unknown as SlimaApiClient);
 
-      expect(toolSpy).toHaveBeenCalledTimes(4);
+      expect(toolSpy).toHaveBeenCalledTimes(5);
 
       // Verify tool names
       const toolNames = toolSpy.mock.calls.map((call) => call[0]);
+      expect(toolNames).toContain('create_book');
       expect(toolNames).toContain('list_books');
       expect(toolNames).toContain('get_book');
       expect(toolNames).toContain('get_book_structure');

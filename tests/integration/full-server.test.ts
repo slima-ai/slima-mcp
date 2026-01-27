@@ -26,7 +26,7 @@ describe('Integration: Full Server Setup', () => {
   });
 
   describe('All tools registration', () => {
-    it('should register all 13 tools across all modules', () => {
+    it('should register all 14 tools across all modules', () => {
       const mockClient = {} as SlimaApiClient;
 
       // Register all tool groups
@@ -35,8 +35,8 @@ describe('Integration: Full Server Setup', () => {
       registerBetaReaderTools(server, mockClient);
       registerFileTools(server, mockClient);
 
-      // Expected total: 4 (books) + 1 (content) + 2 (beta-reader) + 6 (files) = 13
-      expect(toolSpy).toHaveBeenCalledTimes(13);
+      // Expected total: 5 (books) + 1 (content) + 2 (beta-reader) + 6 (files) = 14
+      expect(toolSpy).toHaveBeenCalledTimes(14);
     });
 
     it('should have all expected tool names', () => {
@@ -50,6 +50,7 @@ describe('Integration: Full Server Setup', () => {
       const toolNames = toolSpy.mock.calls.map((call) => call[0]);
 
       // Book tools
+      expect(toolNames).toContain('create_book');
       expect(toolNames).toContain('list_books');
       expect(toolNames).toContain('get_book');
       expect(toolNames).toContain('get_book_structure');
