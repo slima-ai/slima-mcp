@@ -135,6 +135,118 @@ describe('File Tools Handlers', () => {
     });
   });
 
+  describe('edit_file handler', () => {
+    it('should successfully edit file with search and replace', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
+        content: 'The quick brown fox jumps over the lazy dog.',
+      });
+      (mockClient.updateFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        commit: { token: 'cmt_edit123', name: 'Edit chapter-01.md' },
+      });
+
+      const handler = handlers.get('edit_file')!;
+      const result = await handler({
+        book_token: 'bk_test',
+        path: 'chapter-01.md',
+        old_string: 'brown fox',
+        new_string: 'red fox',
+      });
+
+      expect(mockClient.updateFile).toHaveBeenCalledWith('bk_test', {
+        path: 'chapter-01.md',
+        content: 'The quick red fox jumps over the lazy dog.',
+        commitMessage: 'Edit chapter-01.md',
+      });
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('✅ File edited successfully');
+      expect(content[0].text).toContain('cmt_edit123');
+    });
+
+    it('should fail when old_string not found', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
+        content: 'Hello world',
+      });
+
+      const handler = handlers.get('edit_file')!;
+      const result = await handler({
+        book_token: 'bk_test',
+        path: 'chapter-01.md',
+        old_string: 'goodbye',
+        new_string: 'hello',
+      });
+
+      expect(result).toHaveProperty('isError', true);
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('Could not find the specified text');
+    });
+
+    it('should fail when multiple matches found (without replace_all)', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
+        content: 'The cat sat on the mat. The cat was happy.',
+      });
+
+      const handler = handlers.get('edit_file')!;
+      const result = await handler({
+        book_token: 'bk_test',
+        path: 'chapter-01.md',
+        old_string: 'cat',
+        new_string: 'dog',
+      });
+
+      expect(result).toHaveProperty('isError', true);
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('2 occurrences');
+    });
+
+    it('should replace all occurrences when replace_all is true', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
+        content: 'The cat sat on the mat. The cat was happy.',
+      });
+      (mockClient.updateFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        commit: { token: 'cmt_edit456', name: 'Edit chapter-01.md' },
+      });
+
+      const handler = handlers.get('edit_file')!;
+      const result = await handler({
+        book_token: 'bk_test',
+        path: 'chapter-01.md',
+        old_string: 'cat',
+        new_string: 'dog',
+        replace_all: true,
+      });
+
+      expect(mockClient.updateFile).toHaveBeenCalledWith('bk_test', {
+        path: 'chapter-01.md',
+        content: 'The dog sat on the mat. The dog was happy.',
+        commitMessage: 'Edit chapter-01.md',
+      });
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('Replacements:** 2');
+    });
+
+    it('should handle file not found error', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new NotFoundError('File not found')
+      );
+
+      const handler = handlers.get('edit_file')!;
+      const result = await handler({
+        book_token: 'bk_test',
+        path: 'nonexistent.md',
+        old_string: 'foo',
+        new_string: 'bar',
+      });
+
+      expect(result).toHaveProperty('isError', true);
+    });
+  });
+
   describe('create_file handler', () => {
     it('should return success message with file token and commit', async () => {
       (mockClient.createFile as ReturnType<typeof vi.fn>).mockResolvedValue({

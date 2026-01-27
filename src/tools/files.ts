@@ -87,6 +87,86 @@ export function registerFileTools(
     }
   );
 
+  // === edit_file ===
+  server.tool(
+    'edit_file',
+    'Edit a file by replacing a specific text segment (search and replace). Use this for precise edits instead of rewriting the entire file.',
+    {
+      book_token: z.string().describe('Book token (e.g., bk_abc123)'),
+      path: z.string().describe('File path (e.g., "characters/protagonist.md")'),
+      old_string: z.string().describe('The exact text to find and replace (must match exactly, including whitespace)'),
+      new_string: z.string().describe('The new text to replace it with'),
+      replace_all: z.boolean().optional().describe('Replace all occurrences (default: false, replaces only first match)'),
+      commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
+    },
+    async ({ book_token, path, old_string, new_string, replace_all, commit_message }) => {
+      try {
+        // 1. Read current content
+        const fileData = await client.readFile(book_token, path);
+        const currentContent = fileData.content || '';
+
+        // 2. Check if old_string exists
+        if (!currentContent.includes(old_string)) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `❌ Edit failed: Could not find the specified text in the file.\n\n**Looking for:**\n\`\`\`\n${old_string.slice(0, 200)}${old_string.length > 200 ? '...' : ''}\n\`\`\`\n\n**Tip:** Make sure the text matches exactly, including whitespace and line breaks.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // 3. Check for uniqueness (if not replace_all)
+        if (!replace_all) {
+          const occurrences = currentContent.split(old_string).length - 1;
+          if (occurrences > 1) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `❌ Edit failed: Found ${occurrences} occurrences of the text. Please provide a more specific/longer text segment to ensure a unique match, or set replace_all: true to replace all occurrences.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+
+        // 4. Perform replacement
+        const newContent = replace_all
+          ? currentContent.split(old_string).join(new_string)
+          : currentContent.replace(old_string, new_string);
+
+        // 5. Write back
+        const result = await client.updateFile(book_token, {
+          path,
+          content: newContent,
+          commitMessage: commit_message || `Edit ${path}`,
+        });
+
+        const replacementCount = replace_all
+          ? currentContent.split(old_string).length - 1
+          : 1;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ File edited successfully.\n\n**Replacements:** ${replacementCount}\n**Commit:** ${result.commit.token}\n**Message:** ${result.commit.name || result.commit.message}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: formatErrorForMcp(error) }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   // === create_file ===
   server.tool(
     'create_file',

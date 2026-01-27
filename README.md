@@ -22,12 +22,14 @@ Connect your Slima books to **any MCP-compatible AI tool** - one server, all pla
 ## Features
 
 ### Book Management
+- **Create** new books
 - List and view your books
 - Get file/folder structure
 - Track writing statistics
 
 ### File Operations
 - **Read** any file by path
+- **Edit** specific text (search & replace)
 - **Write** (replace) file content
 - **Create** new files
 - **Delete** files
@@ -140,6 +142,7 @@ After saving the configuration, restart the application to load Slima MCP.
 
 | Tool | Description |
 |------|-------------|
+| `create_book` | Create a new book in your library |
 | `list_books` | List all books in your Slima library |
 | `get_book` | Get details of a specific book |
 | `get_book_structure` | Get the file/folder structure of a book |
@@ -150,6 +153,7 @@ After saving the configuration, restart the application to load Slima MCP.
 | Tool | Description |
 |------|-------------|
 | `read_file` | Read content of any file by path |
+| `edit_file` | Edit specific text using search & replace |
 | `write_file` | Replace entire content of a file |
 | `create_file` | Create a new file in a book |
 | `delete_file` | Delete a file from a book |
@@ -168,6 +172,7 @@ After saving the configuration, restart the application to load Slima MCP.
 Once configured, you can ask your AI:
 
 **Book & Content:**
+- "Create a new book called 'My Novel'"
 - "List my books in Slima"
 - "Show me the structure of my novel"
 - "Read chapter 3 of my book"
@@ -175,6 +180,7 @@ Once configured, you can ask your AI:
 
 **File Operations:**
 - "Read the character profile for my protagonist"
+- "Edit chapter 1 and change 'John' to 'James'"
 - "Create a new file called worldbuilding.md with notes about the magic system"
 - "Search for all mentions of 'blue eyes' in my book"
 - "Append this new paragraph to chapter 5"

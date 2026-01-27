@@ -41,16 +41,17 @@ describe('File Tools', () => {
       }).not.toThrow();
     });
 
-    it('should register all 6 file-related tools', () => {
+    it('should register all 7 file-related tools', () => {
       const toolSpy = vi.spyOn(server, 'tool');
 
       registerFileTools(server, mockClient as unknown as SlimaApiClient);
 
-      expect(toolSpy).toHaveBeenCalledTimes(6);
+      expect(toolSpy).toHaveBeenCalledTimes(7);
 
       const toolNames = toolSpy.mock.calls.map((call) => call[0]);
       expect(toolNames).toContain('read_file');
       expect(toolNames).toContain('write_file');
+      expect(toolNames).toContain('edit_file');
       expect(toolNames).toContain('create_file');
       expect(toolNames).toContain('delete_file');
       expect(toolNames).toContain('append_to_file');
@@ -78,6 +79,21 @@ describe('File Tools', () => {
       expect(call?.[2]).toHaveProperty('book_token');
       expect(call?.[2]).toHaveProperty('path');
       expect(call?.[2]).toHaveProperty('content');
+      expect(call?.[2]).toHaveProperty('commit_message');
+    });
+
+    it('should register edit_file with correct parameters', () => {
+      const toolSpy = vi.spyOn(server, 'tool');
+
+      registerFileTools(server, mockClient as unknown as SlimaApiClient);
+
+      const call = toolSpy.mock.calls.find((c) => c[0] === 'edit_file');
+      expect(call).toBeDefined();
+      expect(call?.[2]).toHaveProperty('book_token');
+      expect(call?.[2]).toHaveProperty('path');
+      expect(call?.[2]).toHaveProperty('old_string');
+      expect(call?.[2]).toHaveProperty('new_string');
+      expect(call?.[2]).toHaveProperty('replace_all');
       expect(call?.[2]).toHaveProperty('commit_message');
     });
 
