@@ -2,20 +2,44 @@ name: Publish to npm
 
 on:
   push:
-    tags:
-      - 'v*'  # 當 push v 開頭的 tag 時自動發布
+    branches: [main]
+    paths:
+      - 'package.json'  # 只有 package.json 變更時才跑
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # 需要 write 來建立 tag
       id-token: write
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # 需要前一個 commit 來比較版本
+
+      - name: Check if version changed
+        id: version
+        run: |
+          # 取得當前和前一個 commit 的版本
+          CURRENT=$(node -p "require('./package.json').version")
+          git checkout HEAD~1 -- package.json 2>/dev/null || true
+          PREVIOUS=$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
+          git checkout HEAD -- package.json
+
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "📦 Version changed: $PREVIOUS → $CURRENT"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Version unchanged: $CURRENT"
+          fi
 
       - name: Setup Node.js
+        if: steps.version.outputs.changed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -23,15 +47,28 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        if: steps.version.outputs.changed == 'true'
         run: npm ci
 
       - name: Run tests
+        if: steps.version.outputs.changed == 'true'
         run: npm run test:run
 
       - name: Build
+        if: steps.version.outputs.changed == 'true'
         run: npm run build
 
+      - name: Create and push tag
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          VERSION=${{ steps.version.outputs.current }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
       - name: Publish to npm
+        if: steps.version.outputs.changed == 'true'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
