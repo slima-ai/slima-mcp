@@ -13,6 +13,8 @@ import {
   type CreateReaderTestParams,
   type ApiResponse,
   type ApiError,
+  type CommitsListResponse,
+  type BlobsDownloadResponse,
 } from './types.js';
 import {
   SlimaApiError,
@@ -112,12 +114,14 @@ export class SlimaApiClient {
 
   /**
    * 列出 Commits
+   * 注意：API 回傳 { commits: [...] }，需要解構
    */
   async listCommits(bookToken: string, limit = 10): Promise<Commit[]> {
-    return this.request<Commit[]>(
+    const response = await this.request<CommitsListResponse>(
       'GET',
       `/api/v1/books/${bookToken}/commits?limit=${limit}`
     );
+    return response.commits;
   }
 
   /**
@@ -139,13 +143,15 @@ export class SlimaApiClient {
 
   /**
    * 下載 Blobs
+   * 注意：API 回傳 { blobs: [...], notFound: [...], truncated: ... }
    */
   async downloadBlobs(bookToken: string, hashes: string[]): Promise<Blob[]> {
-    return this.request<Blob[]>(
+    const response = await this.request<BlobsDownloadResponse>(
       'POST',
       `/api/v1/books/${bookToken}/blobs/download`,
       { hashes }
     );
+    return response.blobs;
   }
 
   // === Persona 相關 ===
@@ -176,11 +182,13 @@ export class SlimaApiClient {
   ): Promise<ReaderTest> {
     return this.request<ReaderTest>(
       'POST',
-      `/api/v1/books/${bookToken}/reader-tests`,
+      `/api/v1/books/${bookToken}/reader_tests`,
       {
         reader_test: {
+          report_type: params.reportType || 'chapter',
           persona_tokens: params.personaTokens,
           commit_token: params.commitToken,
+          model: params.model,
           scope_config: params.scopeConfig,
         },
         content: params.content,
@@ -197,7 +205,7 @@ export class SlimaApiClient {
   ): Promise<ReaderTestProgress> {
     return this.request<ReaderTestProgress>(
       'GET',
-      `/api/v1/books/${bookToken}/reader-tests/${testToken}/progress`
+      `/api/v1/books/${bookToken}/reader_tests/${testToken}/progress`
     );
   }
 
@@ -207,7 +215,7 @@ export class SlimaApiClient {
   async getReaderTest(bookToken: string, testToken: string): Promise<ReaderTest> {
     return this.request<ReaderTest>(
       'GET',
-      `/api/v1/books/${bookToken}/reader-tests/${testToken}`
+      `/api/v1/books/${bookToken}/reader_tests/${testToken}`
     );
   }
 }

@@ -95,31 +95,145 @@ export interface Persona {
 
 export interface ReaderTest {
   token: string;
+  bookToken?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
-  personaResults?: PersonaResult[];
+  progress: number;
+  reportType: 'chapter' | 'opening' | 'full';
+  personaCount: number;
+  completedPersonaCount: number;
+  personaTokens: string[];
+  modelUsed?: string;
+  temperature?: number;
+  scopeConfig?: Record<string, unknown>;
+  aggregatedMetrics?: AggregatedMetrics;
+  individualFeedbacks?: IndividualFeedback[];
+  creditsUsed?: number;
+  errorMessage?: string;
   createdAt: string;
+  updatedAt?: string;
+  completedAt?: string;
 }
 
-export interface PersonaResult {
-  persona?: Persona;
-  overallImpression?: string;
-  emotionalResponse?: string;
-  characterFeedback?: string;
-  suggestions?: string;
+export interface AggregatedMetrics {
+  overall?: {
+    avgContinueReading?: number;
+    avgRecommendation?: number;
+    avgWantMore?: number;
+    dnfRisk?: 'low' | 'medium' | 'high';
+    continueReadingDistribution?: Record<string, number>;
+  };
+  opening?: {
+    avgHookEffectiveness?: number;
+    avgOrientationSpeed?: number;
+    interestCurveSummary?: Record<string, number>;
+  };
+  characters?: {
+    avgProtagonistLikability?: number;
+    avgMotivationClarity?: number;
+    avgDialogueNaturalness?: number;
+    characterScores?: Record<string, number>;
+  };
+  pacing?: {
+    avgOverall?: number;
+    consensus?: string;
+    commonDnfTriggers?: Array<{ trigger: string; count: number; locations?: string[] }>;
+    commonConfusingSections?: Array<{ location: string; reason: string; feeling?: string; suggestion?: string }>;
+  };
+  context?: {
+    avgClarity?: number;
+    avgInfoDensity?: number;
+    infoDensityAssessment?: string;
+    commonConsistencyIssues?: string[];
+  };
+  market?: {
+    topComparableBooks?: Array<{ title: string; mentionedBy?: string[] }>;
+    avgWordOfMouth?: number;
+  };
+  kindleRating?: {
+    avgScore: number;
+    distribution?: Record<string, number>;
+    individualScores?: Array<{ score: number; confidence: string; personaName?: string }>;
+  };
+}
+
+export interface IndividualFeedback {
+  personaToken: string;
+  personaName?: string;
+  overall?: {
+    continueReading?: number;
+    recommendation?: number;
+    wantMore?: number;
+    dnfRisk?: string;
+  };
+  opening?: {
+    hookEffectiveness?: number;
+    orientationSpeed?: number;
+    interestCurve?: string;
+    firstImpression?: string;
+  };
+  characters?: {
+    protagonistLikability?: number;
+    motivationClarity?: number;
+    dialogueNaturalness?: number;
+    characterDetails?: Record<string, unknown>;
+    dialogueFeedback?: string;
+  };
+  pacing?: {
+    overall?: number;
+    assessment?: string;
+    dnfHotspots?: Array<{ location: string; reason: string }>;
+    confusingSections?: Array<{ location: string; reason: string; feeling?: string; suggestion?: string }>;
+  };
+  context?: {
+    clarity?: number;
+    infoDensity?: number;
+    infoDensityAssessment?: string;
+    consistencyIssues?: string[];
+  };
+  market?: {
+    comparableBooks?: string[];
+    genrePositioning?: string;
+    wordOfMouthPotential?: number;
+  };
+  emotionalJourney?: {
+    emotionalArc?: string;
+    peakMoments?: string[];
+    overallMood?: string;
+  };
+  detailedFeedback?: {
+    whatWorked?: string;
+    whatDidntWork?: string;
+    strongestElement?: string;
+    weakestElement?: string;
+    wouldYouBuy?: string;
+    specificSuggestions?: string[];
+    finalThoughts?: string;
+  };
+  kindleRating?: {
+    score: number;
+    rationale?: string;
+    confidence?: 'low' | 'medium' | 'high';
+  };
 }
 
 export interface ReaderTestProgress {
+  token: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress?: number;
+  progress: number;
+  completedPersonas: number;
+  totalPersonas: number;
+  errorMessage?: string;
 }
 
 export interface CreateReaderTestParams {
   personaTokens: string[];
+  reportType?: 'chapter' | 'opening' | 'full';
   commitToken?: string;
+  model?: string;
   scopeConfig?: {
     chapters?: string[];
   };
-  content?: string;
+  content: string;
 }
 
 // === API 回應 ===
@@ -132,6 +246,17 @@ export interface ApiResponse<T> {
     perPage?: number;
     totalPages?: number;
   };
+}
+
+// 特殊回應格式（API 回傳包裝物件）
+export interface CommitsListResponse {
+  commits: Commit[];
+}
+
+export interface BlobsDownloadResponse {
+  blobs: Blob[];
+  notFound: string[];
+  truncated: number;
 }
 
 export interface ApiError {

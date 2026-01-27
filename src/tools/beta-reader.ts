@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
 import { formatErrorForMcp } from '../utils/errors.js';
-import type { FileSnapshot, ReaderTest } from '../api/types.js';
+import type { FileSnapshot, ReaderTest, IndividualFeedback, AggregatedMetrics } from '../api/types.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -149,6 +149,7 @@ export function registerBetaReaderTools(
         logger.info(`Creating reader test for ${file_path} with persona ${persona_token}`);
 
         const test = await client.createReaderTest(book_token, {
+          reportType: 'chapter',
           personaTokens: [persona_token],
           commitToken: commits[0].token,
           scopeConfig: { chapters: [file_path] },
@@ -235,42 +236,181 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * 格式化 Beta Reader 反饋
+ * 格式化 Beta Reader 反饋 (English headers for better AI processing)
  */
 function formatBetaReaderFeedback(test: ReaderTest, fileName: string): string {
-  const results = test.personaResults || [];
+  const feedbacks = test.individualFeedbacks || [];
+  const metrics = test.aggregatedMetrics;
 
-  if (results.length === 0) {
+  if (feedbacks.length === 0 && !metrics) {
     return 'No feedback available.';
   }
 
-  const feedbackSections = results.map((r) => {
-    const persona = r.persona;
-    const name =
-      persona?.displayLabels?.zh || persona?.displayLabels?.en || persona?.slug || 'Reader';
+  let output = `# Beta Reader Feedback: ${fileName}\n\n`;
 
-    let section = `## ${name} 的反饋\n\n`;
+  // Aggregated metrics summary
+  if (metrics) {
+    output += formatAggregatedMetrics(metrics);
+  }
 
-    if (r.overallImpression) {
-      section += `### 整體印象\n${r.overallImpression}\n\n`;
+  // Individual persona feedback
+  if (feedbacks.length > 0) {
+    output += `\n---\n\n## Individual Reader Feedback\n\n`;
+    output += feedbacks.map(formatIndividualFeedback).join('\n---\n\n');
+  }
+
+  return output;
+}
+
+/**
+ * 格式化聚合指標 (English headers for better AI processing)
+ */
+function formatAggregatedMetrics(metrics: AggregatedMetrics): string {
+  let output = `## Summary Metrics\n\n`;
+
+  // Overall
+  if (metrics.overall) {
+    const o = metrics.overall;
+    output += `### Overall Scores\n`;
+    if (o.avgContinueReading) output += `- Continue Reading Intent: ${o.avgContinueReading.toFixed(1)}/10\n`;
+    if (o.avgRecommendation) output += `- Recommendation Score: ${o.avgRecommendation.toFixed(1)}/10\n`;
+    if (o.avgWantMore) output += `- Want More: ${o.avgWantMore.toFixed(1)}/10\n`;
+    if (o.dnfRisk) output += `- DNF Risk: ${o.dnfRisk}\n`;
+    output += '\n';
+  }
+
+  // Kindle Rating
+  if (metrics.kindleRating) {
+    output += `### Predicted Kindle Rating\n`;
+    output += `- Average Score: ⭐ ${metrics.kindleRating.avgScore.toFixed(1)}/5\n`;
+    if (metrics.kindleRating.individualScores) {
+      const scores = metrics.kindleRating.individualScores
+        .map(s => `${s.personaName || 'Reader'}: ${s.score}/5 (${s.confidence})`)
+        .join(', ');
+      output += `- Individual Scores: ${scores}\n`;
+    }
+    output += '\n';
+  }
+
+  // Characters
+  if (metrics.characters) {
+    const c = metrics.characters;
+    output += `### Character Evaluation\n`;
+    if (c.avgProtagonistLikability) output += `- Protagonist Likability: ${c.avgProtagonistLikability.toFixed(1)}/10\n`;
+    if (c.avgMotivationClarity) output += `- Motivation Clarity: ${c.avgMotivationClarity.toFixed(1)}/10\n`;
+    if (c.avgDialogueNaturalness) output += `- Dialogue Naturalness: ${c.avgDialogueNaturalness.toFixed(1)}/10\n`;
+    output += '\n';
+  }
+
+  // Pacing
+  if (metrics.pacing) {
+    const p = metrics.pacing;
+    output += `### Pacing Evaluation\n`;
+    if (p.avgOverall) output += `- Overall Pacing: ${p.avgOverall.toFixed(1)}/10\n`;
+    if (p.consensus) output += `- Consensus: ${p.consensus}\n`;
+    if (p.commonDnfTriggers && p.commonDnfTriggers.length > 0) {
+      output += `- Common DNF Triggers:\n`;
+      p.commonDnfTriggers.slice(0, 3).forEach(t => {
+        output += `  - ${t.trigger} (${t.count}x)\n`;
+      });
+    }
+    output += '\n';
+  }
+
+  // Market
+  if (metrics.market) {
+    const m = metrics.market;
+    output += `### Market Positioning\n`;
+    if (m.avgWordOfMouth) output += `- Word of Mouth Potential: ${m.avgWordOfMouth.toFixed(1)}/10\n`;
+    if (m.topComparableBooks && m.topComparableBooks.length > 0) {
+      const books = m.topComparableBooks.slice(0, 3).map(b => b.title).join(', ');
+      output += `- Comparable Books: ${books}\n`;
+    }
+    output += '\n';
+  }
+
+  return output;
+}
+
+/**
+ * 格式化單一讀者反饋 (English headers for better AI processing)
+ */
+function formatIndividualFeedback(feedback: IndividualFeedback): string {
+  const name = feedback.personaName || feedback.personaToken;
+  let output = `### ${name}\n\n`;
+
+  // Overall scores
+  if (feedback.overall) {
+    const o = feedback.overall;
+    if (o.continueReading) output += `**Continue Reading Intent**: ${o.continueReading}/10\n`;
+    if (o.recommendation) output += `**Recommendation**: ${o.recommendation}/10\n`;
+    if (o.dnfRisk) output += `**DNF Risk**: ${o.dnfRisk}\n`;
+    output += '\n';
+  }
+
+  // Kindle Rating
+  if (feedback.kindleRating) {
+    output += `**Kindle Rating**: ⭐ ${feedback.kindleRating.score}/5`;
+    if (feedback.kindleRating.rationale) {
+      output += ` - ${feedback.kindleRating.rationale}`;
+    }
+    output += '\n\n';
+  }
+
+  // Detailed Feedback
+  if (feedback.detailedFeedback) {
+    const d = feedback.detailedFeedback;
+
+    if (d.whatWorked) {
+      output += `**What Worked**:\n${d.whatWorked}\n\n`;
     }
 
-    if (r.emotionalResponse) {
-      section += `### 情緒反應\n${r.emotionalResponse}\n\n`;
+    if (d.whatDidntWork) {
+      output += `**What Didn't Work**:\n${d.whatDidntWork}\n\n`;
     }
 
-    if (r.characterFeedback) {
-      section += `### 角色評價\n${r.characterFeedback}\n\n`;
+    if (d.strongestElement) {
+      output += `**Strongest Element**: ${d.strongestElement}\n`;
     }
 
-    if (r.suggestions) {
-      section += `### 改進建議\n${r.suggestions}\n\n`;
+    if (d.weakestElement) {
+      output += `**Weakest Element**: ${d.weakestElement}\n`;
     }
 
-    return section;
-  });
+    if (d.wouldYouBuy) {
+      output += `**Would You Buy**: ${d.wouldYouBuy}\n`;
+    }
 
-  return `# Beta Reader Feedback: ${fileName}\n\n${feedbackSections.join('---\n\n')}`;
+    if (d.specificSuggestions && d.specificSuggestions.length > 0) {
+      output += `\n**Specific Suggestions**:\n`;
+      d.specificSuggestions.forEach((s, i) => {
+        output += `${i + 1}. ${s}\n`;
+      });
+    }
+
+    if (d.finalThoughts) {
+      output += `\n**Final Thoughts**:\n${d.finalThoughts}\n`;
+    }
+  }
+
+  // Emotional Journey
+  if (feedback.emotionalJourney) {
+    const e = feedback.emotionalJourney;
+    if (e.emotionalArc) {
+      output += `\n**Emotional Arc**: ${e.emotionalArc}\n`;
+    }
+    if (e.peakMoments && e.peakMoments.length > 0) {
+      const moments = e.peakMoments.map(m =>
+        typeof m === 'string' ? m : (m as { moment?: string; description?: string }).moment || (m as { moment?: string; description?: string }).description || JSON.stringify(m)
+      );
+      output += `**Peak Moments**: ${moments.join(', ')}\n`;
+    }
+    if (e.overallMood) {
+      output += `**Overall Mood**: ${e.overallMood}\n`;
+    }
+  }
+
+  return output;
 }
 
 /**

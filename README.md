@@ -1,8 +1,21 @@
-# Slima MCP Server
+# Slima MCP
 
 MCP (Model Context Protocol) Server for [Slima](https://slima.app) - AI Writing IDE for Novel Authors.
 
-Connect Slima to any MCP-compatible AI tool like Claude Desktop, Cursor, or Clawdbot.
+Connect Slima to **any MCP-compatible AI tool** - one server, all platforms.
+
+## Supported Platforms
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Claude Desktop | ✅ | Native MCP support |
+| ChatGPT Desktop | ✅ | Developer Mode (2025.10+) |
+| Gemini CLI | ✅ | Native MCP support |
+| Cursor | ✅ | Native MCP support |
+| Clawdbot | ✅ | Via Skills system |
+| VS Code | ✅ | Via MCP extensions |
+
+> MCP became the industry standard in December 2025 when Anthropic, OpenAI, and Block co-founded the Agentic AI Foundation under the Linux Foundation.
 
 ## Features
 
@@ -14,13 +27,13 @@ Connect Slima to any MCP-compatible AI tool like Claude Desktop, Cursor, or Claw
 ## Installation
 
 ```bash
-npm install -g slima-mcp-server
+npm install -g slima-mcp
 ```
 
 Or run directly with npx:
 
 ```bash
-npx slima-mcp-server
+npx slima-mcp
 ```
 
 ## Configuration
@@ -31,20 +44,18 @@ npx slima-mcp-server
 2. Click "Generate API Token"
 3. Copy the token (it starts with `slima_`)
 
-### 2. Configure Claude Desktop
+### 2. Configure Your AI Tool
 
-Edit your Claude Desktop configuration file:
+#### Claude Desktop
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-**Linux**: `~/.config/Claude/claude_desktop_config.json`
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
   "mcpServers": {
     "slima": {
       "command": "npx",
-      "args": ["slima-mcp-server"],
+      "args": ["-y", "slima-mcp"],
       "env": {
         "SLIMA_API_TOKEN": "slima_your_token_here"
       }
@@ -53,9 +64,39 @@ Edit your Claude Desktop configuration file:
 }
 ```
 
-### 3. Restart Claude Desktop
+#### ChatGPT (Developer Mode)
 
-After saving the configuration, restart Claude Desktop to load the Slima MCP Server.
+1. Open ChatGPT Settings → Connectors → Advanced → Developer Mode
+2. Add MCP Server with endpoint configuration
+3. Set `SLIMA_API_TOKEN` in environment
+
+#### Gemini CLI
+
+```bash
+gemini mcp add slima --command "npx -y slima-mcp" --env SLIMA_API_TOKEN=slima_your_token
+```
+
+#### Cursor
+
+Add to Cursor's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "slima": {
+      "command": "npx",
+      "args": ["-y", "slima-mcp"],
+      "env": {
+        "SLIMA_API_TOKEN": "slima_your_token_here"
+      }
+    }
+  }
+}
+```
+
+### 3. Restart Your AI Tool
+
+After saving the configuration, restart the application to load Slima MCP.
 
 ## Available Tools
 
@@ -71,12 +112,12 @@ After saving the configuration, restart Claude Desktop to load the Slima MCP Ser
 
 ## Usage Examples
 
-Once configured, you can ask Claude:
+Once configured, you can ask your AI:
 
 - "List my books in Slima"
 - "Show me the structure of my novel"
 - "Read chapter 3 of my book"
-- "What are my writing stats for this month?"
+- "What are my writing stats?"
 - "Get feedback on chapter 5 from a young female reader"
 
 ## Environment Variables
@@ -91,8 +132,8 @@ Once configured, you can ask Claude:
 
 ```bash
 # Clone the repository
-git clone https://github.com/slima-app/slima-mcp-server.git
-cd slima-mcp-server
+git clone https://github.com/slima-app/slima-mcp.git
+cd slima-mcp
 
 # Install dependencies
 npm install
@@ -107,16 +148,6 @@ npm test
 npm run dev
 ```
 
-## Testing Locally
-
-```bash
-# Set your API token
-export SLIMA_API_TOKEN="slima_your_token"
-
-# Run the server
-npm start
-```
-
 ## License
 
 MIT
@@ -125,4 +156,4 @@ MIT
 
 - [Slima Website](https://slima.app)
 - [MCP Documentation](https://modelcontextprotocol.io)
-- [Report Issues](https://github.com/slima-app/slima-mcp-server/issues)
+- [Report Issues](https://github.com/slima-app/slima-mcp/issues)

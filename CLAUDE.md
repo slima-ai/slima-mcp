@@ -1,17 +1,32 @@
-# CLAUDE.md - Slima MCP Server
+# CLAUDE.md - Slima MCP
 
 > 此文件提供 Claude Code 理解專案的必要上下文。
 
 ## 專案概述
 
-**Slima MCP Server** 是一個 MCP (Model Context Protocol) 伺服器，讓 AI 工具（如 Claude Desktop、Cursor、Clawdbot）能夠與 Slima 書籍管理和 AI Beta Reader 功能互動。
+**Slima MCP** (`slima-mcp` on npm) 是一個 MCP (Model Context Protocol) 伺服器，讓所有支援 MCP 的 AI 工具都能與 Slima 書籍管理和 AI Beta Reader 功能互動。
+
+### 支援平台（MCP 已成為業界標準）
+
+| 平台 | 狀態 | 備註 |
+|------|------|------|
+| Claude Desktop | ✅ | 原生支援 |
+| ChatGPT Desktop | ✅ | Developer Mode (2025.10+) |
+| Gemini CLI | ✅ | 原生支援 |
+| Cursor | ✅ | 原生支援 |
+| Clawdbot | ✅ | Via Skills |
+| VS Code | ✅ | Via MCP extensions |
+
+> 2025.12 MCP 捐給 Linux Foundation (AAIF)，由 Anthropic + OpenAI + Block 共同創立。
 
 ### 架構定位
 
 ```
 ┌─────────────────┐     MCP (STDIO)     ┌─────────────────┐     HTTP/REST     ┌─────────────────┐
-│  Claude Desktop │ ◄─────────────────► │  slima-mcp-     │ ◄───────────────► │   slima_rails   │
-│  Cursor / etc.  │                     │  server         │                   │   (API)         │
+│  Claude Desktop │                     │                 │                   │                 │
+│  ChatGPT        │ ◄─────────────────► │   slima-mcp     │ ◄───────────────► │   slima_rails   │
+│  Gemini CLI     │                     │   (npm 套件)    │                   │   (API)         │
+│  Cursor / etc.  │                     │                 │                   │                 │
 └─────────────────┘                     └─────────────────┘                   └─────────────────┘
      AI 工具                              Thin Client                          業務邏輯
 ```
@@ -331,6 +346,7 @@ Thin Client 架構的優點：
 
 ## 版本資訊
 
+- **Package Name**: `slima-mcp`
 - **Version**: 0.1.0
 - **MCP Protocol**: 1.x
 - **最後更新**: 2026-01-27

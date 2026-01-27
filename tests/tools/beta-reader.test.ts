@@ -160,18 +160,44 @@ describe('Beta Reader Tools', () => {
     const mockReaderTestResult = {
       token: 'rpt_test1',
       status: 'completed',
-      personaResults: [
+      progress: 100,
+      reportType: 'chapter',
+      personaCount: 1,
+      completedPersonaCount: 1,
+      personaTokens: ['psn_fantasy1'],
+      aggregatedMetrics: {
+        overall: {
+          avgContinueReading: 8.5,
+          avgRecommendation: 8.0,
+          dnfRisk: 'low',
+        },
+        kindleRating: {
+          avgScore: 4.2,
+          individualScores: [{ score: 4.2, confidence: 'high', personaName: '奇幻讀者' }],
+        },
+      },
+      individualFeedbacks: [
         {
-          persona: {
-            slug: 'fantasy-reader',
-            displayLabels: { zh: '奇幻讀者' },
+          personaToken: 'psn_fantasy1',
+          personaName: '奇幻讀者',
+          overall: {
+            continueReading: 8,
+            recommendation: 8,
+            dnfRisk: 'low',
           },
-          overallImpression: 'Great chapter!',
-          emotionalResponse: 'Exciting and engaging',
-          characterFeedback: 'Well-developed protagonist',
-          suggestions: 'Consider adding more dialogue',
+          kindleRating: {
+            score: 4,
+            rationale: 'Great chapter!',
+            confidence: 'high',
+          },
+          detailedFeedback: {
+            whatWorked: 'Exciting and engaging',
+            strongestElement: 'Well-developed protagonist',
+            specificSuggestions: ['Consider adding more dialogue'],
+          },
         },
       ],
+      createdAt: '2024-01-01T00:00:00Z',
     };
 
     beforeEach(() => {
@@ -196,11 +222,15 @@ describe('Beta Reader Tools', () => {
       });
 
       expect(result.content[0].text).toContain('Beta Reader Feedback');
+      expect(result.content[0].text).toContain('Summary Metrics'); // English header
+      expect(result.content[0].text).toContain('Individual Reader Feedback'); // English header
       expect(result.content[0].text).toContain('奇幻讀者');
       expect(result.content[0].text).toContain('Great chapter!');
       expect(result.content[0].text).toContain('Exciting and engaging');
       expect(result.content[0].text).toContain('Well-developed protagonist');
       expect(result.content[0].text).toContain('Consider adding more dialogue');
+      expect(result.content[0].text).toContain('8.5'); // avgContinueReading
+      expect(result.content[0].text).toContain('4.2'); // Kindle rating
     });
 
     it('should create reader test with correct params', async () => {
@@ -212,6 +242,7 @@ describe('Beta Reader Tools', () => {
       });
 
       expect(mockClient.createReaderTest).toHaveBeenCalledWith('bk_test', {
+        reportType: 'chapter',
         personaTokens: ['psn_fantasy1'],
         commitToken: 'cmt_1',
         scopeConfig: { chapters: ['chapter-01.md'] },
@@ -314,7 +345,14 @@ describe('Beta Reader Tools', () => {
       mockClient.getReaderTest.mockResolvedValue({
         token: 'rpt_test1',
         status: 'completed',
-        personaResults: [],
+        progress: 100,
+        reportType: 'chapter',
+        personaCount: 0,
+        completedPersonaCount: 0,
+        personaTokens: [],
+        individualFeedbacks: [],
+        aggregatedMetrics: undefined,
+        createdAt: '2024-01-01T00:00:00Z',
       });
 
       const handler = toolHandlers.get('analyze_chapter')!;
@@ -331,13 +369,24 @@ describe('Beta Reader Tools', () => {
       mockClient.getReaderTest.mockResolvedValue({
         token: 'rpt_test1',
         status: 'completed',
-        personaResults: [
+        progress: 100,
+        reportType: 'chapter',
+        personaCount: 1,
+        completedPersonaCount: 1,
+        personaTokens: ['psn_1'],
+        individualFeedbacks: [
           {
-            persona: { slug: 'reader-1' },
-            overallImpression: 'Good',
-            // Missing other fields
+            personaToken: 'psn_1',
+            personaName: 'reader-1',
+            kindleRating: {
+              score: 4,
+              rationale: 'Good',
+              confidence: 'medium',
+            },
+            // Missing other fields - partial data
           },
         ],
+        createdAt: '2024-01-01T00:00:00Z',
       });
 
       const handler = toolHandlers.get('analyze_chapter')!;

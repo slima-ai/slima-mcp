@@ -107,9 +107,10 @@ describe('SlimaApiClient', () => {
         },
       ];
 
+      // API 回傳格式: { data: { commits: [...] } }
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ data: mockCommits }),
+        json: () => Promise.resolve({ data: { commits: mockCommits } }),
       });
 
       const commits = await client.listCommits('bk_test', 5);
@@ -128,9 +129,12 @@ describe('SlimaApiClient', () => {
         { hash: 'sha256:abc', content: 'Hello World', size: 11 },
       ];
 
+      // API 回傳格式: { data: { blobs: [...], notFound: [], truncated: 0 } }
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ data: mockBlobs }),
+        json: () => Promise.resolve({
+          data: { blobs: mockBlobs, notFound: [], truncated: 0 }
+        }),
       });
 
       const blobs = await client.downloadBlobs('bk_test', ['sha256:abc']);
