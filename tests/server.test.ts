@@ -15,10 +15,14 @@ vi.mock('../src/tools/content.js', () => ({
 vi.mock('../src/tools/beta-reader.js', () => ({
   registerBetaReaderTools: vi.fn(),
 }));
+vi.mock('../src/tools/files.js', () => ({
+  registerFileTools: vi.fn(),
+}));
 
 import { registerBookTools } from '../src/tools/books.js';
 import { registerContentTools } from '../src/tools/content.js';
 import { registerBetaReaderTools } from '../src/tools/beta-reader.js';
+import { registerFileTools } from '../src/tools/files.js';
 
 describe('createSlimaServer', () => {
   beforeEach(() => {
@@ -43,6 +47,7 @@ describe('createSlimaServer', () => {
     expect(registerBookTools).toHaveBeenCalledTimes(1);
     expect(registerContentTools).toHaveBeenCalledTimes(1);
     expect(registerBetaReaderTools).toHaveBeenCalledTimes(1);
+    expect(registerFileTools).toHaveBeenCalledTimes(1);
   });
 
   it('should pass API client to all tool registrations', () => {
@@ -61,6 +66,10 @@ describe('createSlimaServer', () => {
       expect.objectContaining({})
     );
     expect(registerBetaReaderTools).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({})
+    );
+    expect(registerFileTools).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({})
     );

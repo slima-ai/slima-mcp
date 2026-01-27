@@ -15,6 +15,12 @@ import {
   type ApiError,
   type CommitsListResponse,
   type BlobsDownloadResponse,
+  type McpFileReadResponse,
+  type McpFileCreateResponse,
+  type McpFileUpdateResponse,
+  type McpFileDeleteResponse,
+  type McpFileAppendResponse,
+  type McpSearchResponse,
 } from './types.js';
 import {
   SlimaApiError,
@@ -216,6 +222,109 @@ export class SlimaApiClient {
     return this.request<ReaderTest>(
       'GET',
       `/api/v1/books/${bookToken}/reader_tests/${testToken}`
+    );
+  }
+
+  // === MCP File Operations ===
+
+  /**
+   * 讀取檔案內容
+   */
+  async readFile(bookToken: string, path: string): Promise<McpFileReadResponse> {
+    return this.request<McpFileReadResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/read`,
+      { path }
+    );
+  }
+
+  /**
+   * 建立新檔案
+   */
+  async createFile(
+    bookToken: string,
+    params: { path: string; content?: string; parentPath?: string; commitMessage?: string }
+  ): Promise<McpFileCreateResponse> {
+    return this.request<McpFileCreateResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/create`,
+      {
+        path: params.path,
+        content: params.content || '',
+        parent_path: params.parentPath,
+        commit_message: params.commitMessage,
+      }
+    );
+  }
+
+  /**
+   * 更新（覆寫）檔案內容
+   */
+  async updateFile(
+    bookToken: string,
+    params: { path: string; content: string; commitMessage?: string }
+  ): Promise<McpFileUpdateResponse> {
+    return this.request<McpFileUpdateResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/update`,
+      {
+        path: params.path,
+        content: params.content,
+        commit_message: params.commitMessage,
+      }
+    );
+  }
+
+  /**
+   * 刪除檔案
+   */
+  async deleteFile(
+    bookToken: string,
+    params: { path: string; commitMessage?: string }
+  ): Promise<McpFileDeleteResponse> {
+    return this.request<McpFileDeleteResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/delete`,
+      {
+        path: params.path,
+        commit_message: params.commitMessage,
+      }
+    );
+  }
+
+  /**
+   * 附加內容到檔案
+   */
+  async appendToFile(
+    bookToken: string,
+    params: { path: string; content: string; commitMessage?: string }
+  ): Promise<McpFileAppendResponse> {
+    return this.request<McpFileAppendResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/append`,
+      {
+        path: params.path,
+        content: params.content,
+        commit_message: params.commitMessage,
+      }
+    );
+  }
+
+  /**
+   * 搜尋檔案內容
+   */
+  async searchFiles(
+    bookToken: string,
+    params: { query: string; fileTypes?: string[]; limit?: number }
+  ): Promise<McpSearchResponse> {
+    return this.request<McpSearchResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/search`,
+      {
+        query: params.query,
+        file_types: params.fileTypes,
+        limit: params.limit,
+      }
     );
   }
 }

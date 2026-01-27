@@ -236,6 +236,55 @@ export interface CreateReaderTestParams {
   content: string;
 }
 
+// === MCP File Operations ===
+
+export interface McpFile {
+  token: string;
+  name: string;
+  path: string;
+  kind: string;
+  fileType?: string;
+  wordCount: number;
+  blobHash?: string;
+}
+
+export interface McpFileReadResponse {
+  file: McpFile;
+  content: string;
+}
+
+export interface McpFileCreateResponse {
+  commit: Commit;
+  fileToken: string;
+}
+
+export interface McpFileUpdateResponse {
+  commit: Commit;
+}
+
+export interface McpFileDeleteResponse {
+  commit: Commit;
+}
+
+export interface McpFileAppendResponse {
+  commit: Commit;
+}
+
+export interface McpSearchMatch {
+  file: McpFile;
+  snippets: Array<{
+    text: string;
+    highlightStart: number;
+    highlightEnd: number;
+  }>;
+  matchCount: number;
+}
+
+export interface McpSearchResponse {
+  matches: McpSearchMatch[];
+  query: string;
+}
+
 // === API 回應 ===
 
 export interface ApiResponse<T> {

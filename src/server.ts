@@ -7,6 +7,7 @@ import { SlimaApiClient } from './api/client.js';
 import { registerBookTools } from './tools/books.js';
 import { registerContentTools } from './tools/content.js';
 import { registerBetaReaderTools } from './tools/beta-reader.js';
+import { registerFileTools } from './tools/files.js';
 import { logger } from './utils/logger.js';
 
 export interface ServerConfig {
@@ -20,7 +21,7 @@ export interface ServerConfig {
 export function createSlimaServer(config: ServerConfig): McpServer {
   const client = new SlimaApiClient({
     token: config.apiToken,
-    baseUrl: config.baseUrl || 'https://api.slima.app',
+    baseUrl: config.baseUrl || 'https://api.slima.ai',
   });
 
   const server = new McpServer({
@@ -32,9 +33,10 @@ export function createSlimaServer(config: ServerConfig): McpServer {
   registerBookTools(server, client);
   registerContentTools(server, client);
   registerBetaReaderTools(server, client);
+  registerFileTools(server, client);
 
   logger.info('Slima MCP Server initialized');
-  logger.info(`API endpoint: ${config.baseUrl || 'https://api.slima.app'}`);
+  logger.info(`API endpoint: ${config.baseUrl || 'https://api.slima.ai'}`);
 
   return server;
 }

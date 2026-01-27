@@ -245,4 +245,214 @@ describe('SlimaApiClient', () => {
       await expect(client.listBooks()).rejects.toThrow();
     });
   });
+
+  // === MCP File Operations ===
+
+  describe('readFile', () => {
+    it('should read file content', async () => {
+      const mockResponse = {
+        file: {
+          token: 'fl_test',
+          name: 'chapter-01.md',
+          path: 'chapter-01.md',
+          kind: 'chapter',
+          fileType: 'markdown',
+          wordCount: 100,
+        },
+        content: '# Chapter 1\n\nContent here...',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.readFile('bk_test', 'chapter-01.md');
+
+      expect(result.file.name).toBe('chapter-01.md');
+      expect(result.content).toBe('# Chapter 1\n\nContent here...');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.test.com/api/v1/books/bk_test/mcp/files/read',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ path: 'chapter-01.md' }),
+        })
+      );
+    });
+
+    it('should throw NotFoundError when file not found', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () =>
+          Promise.resolve({
+            error: { code: 'FILE_NOT_FOUND', message: 'File not found' },
+          }),
+      });
+
+      await expect(client.readFile('bk_test', 'nonexistent.md')).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('createFile', () => {
+    it('should create a new file', async () => {
+      const mockResponse = {
+        commit: {
+          token: 'cmt_new',
+          name: 'Create file: test.md',
+        },
+        fileToken: 'fl_new',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.createFile('bk_test', {
+        path: 'test.md',
+        content: 'Hello World',
+        commitMessage: 'Add test file',
+      });
+
+      expect(result.fileToken).toBe('fl_new');
+      expect(result.commit.token).toBe('cmt_new');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.test.com/api/v1/books/bk_test/mcp/files/create',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            path: 'test.md',
+            content: 'Hello World',
+            parent_path: undefined,
+            commit_message: 'Add test file',
+          }),
+        })
+      );
+    });
+  });
+
+  describe('updateFile', () => {
+    it('should update file content', async () => {
+      const mockResponse = {
+        commit: {
+          token: 'cmt_update',
+          name: 'Update file: test.md',
+        },
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.updateFile('bk_test', {
+        path: 'test.md',
+        content: 'Updated content',
+        commitMessage: 'Update test file',
+      });
+
+      expect(result.commit.token).toBe('cmt_update');
+    });
+  });
+
+  describe('deleteFile', () => {
+    it('should delete a file', async () => {
+      const mockResponse = {
+        commit: {
+          token: 'cmt_delete',
+          name: 'Delete file: test.md',
+        },
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.deleteFile('bk_test', {
+        path: 'test.md',
+      });
+
+      expect(result.commit.token).toBe('cmt_delete');
+    });
+  });
+
+  describe('appendToFile', () => {
+    it('should append content to file', async () => {
+      const mockResponse = {
+        commit: {
+          token: 'cmt_append',
+          name: 'Append to file: test.md',
+        },
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.appendToFile('bk_test', {
+        path: 'test.md',
+        content: '\n\nAppended content',
+      });
+
+      expect(result.commit.token).toBe('cmt_append');
+    });
+  });
+
+  describe('searchFiles', () => {
+    it('should search files and return matches', async () => {
+      const mockResponse = {
+        matches: [
+          {
+            file: { token: 'fl_1', name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
+            snippets: [{ text: '...blue eyes...', highlightStart: 3, highlightEnd: 12 }],
+            matchCount: 1,
+          },
+        ],
+        query: 'blue eyes',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.searchFiles('bk_test', {
+        query: 'blue eyes',
+        limit: 10,
+      });
+
+      expect(result.matches).toHaveLength(1);
+      expect(result.query).toBe('blue eyes');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.test.com/api/v1/books/bk_test/mcp/files/search',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: 'blue eyes',
+            file_types: undefined,
+            limit: 10,
+          }),
+        })
+      );
+    });
+
+    it('should return empty matches when no results', async () => {
+      const mockResponse = {
+        matches: [],
+        query: 'xyz123',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: mockResponse }),
+      });
+
+      const result = await client.searchFiles('bk_test', { query: 'xyz123' });
+
+      expect(result.matches).toHaveLength(0);
+    });
+  });
 });

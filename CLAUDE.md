@@ -64,6 +64,7 @@ slima-mcp-server/
 │   │   ├── books.ts       # 書籍工具 (4 tools)
 │   │   ├── content.ts     # 內容工具 (1 tool)
 │   │   ├── beta-reader.ts # Beta Reader 工具 (2 tools)
+│   │   ├── files.ts       # 檔案操作工具 (6 tools)
 │   │   └── index.ts       # 匯出
 │   ├── utils/
 │   │   ├── errors.ts      # 錯誤類別和格式化
@@ -98,9 +99,15 @@ slima-mcp-server/
 | `get_book` | `GET /api/v1/books/:token` | 取得書籍詳情 |
 | `get_book_structure` | `GET /api/v1/books/:token/commits?limit=1` | 從最新 commit 取得檔案結構 |
 | `get_writing_stats` | `GET /api/v1/books/:token` + `commits` | 計算寫作統計 |
-| `get_chapter` | `POST /api/v1/books/:token/blobs/download` | 下載章節內容 |
+| `get_chapter` | `POST /api/v1/books/:token/blobs/download` | 下載章節內容（legacy） |
 | `list_personas` | `GET /api/v1/personas` | 列出虛擬讀者 |
 | `analyze_chapter` | `POST /api/v1/reader-tests` | 執行 AI Beta Reader 分析 |
+| `read_file` | `POST /mcp/files/read` | 讀取任意檔案內容 |
+| `write_file` | `POST /mcp/files/update` | 覆寫檔案內容 |
+| `create_file` | `POST /mcp/files/create` | 建立新檔案 |
+| `delete_file` | `POST /mcp/files/delete` | 刪除檔案 |
+| `append_to_file` | `POST /mcp/files/append` | 附加內容到檔案 |
+| `search_content` | `POST /mcp/files/search` | 搜尋全書內容 |
 
 ### Tool 參數說明
 
@@ -135,6 +142,53 @@ slima-mcp-server/
   file_path: string,
   persona_token: string  // e.g., "psn_xxx"
 }
+
+// === File Operations ===
+
+// read_file
+{
+  book_token: string,
+  path: string  // e.g., "characters/protagonist.md"
+}
+
+// write_file
+{
+  book_token: string,
+  path: string,
+  content: string,
+  commit_message?: string
+}
+
+// create_file
+{
+  book_token: string,
+  path: string,
+  content?: string,
+  commit_message?: string
+}
+
+// delete_file
+{
+  book_token: string,
+  path: string,
+  commit_message?: string
+}
+
+// append_to_file
+{
+  book_token: string,
+  path: string,
+  content: string,
+  commit_message?: string
+}
+
+// search_content
+{
+  book_token: string,
+  query: string,
+  file_types?: string[],  // e.g., ["markdown", "txt"]
+  limit?: number          // default: 20
+}
 ```
 
 ---
@@ -160,6 +214,14 @@ class SlimaApiClient {
   createReaderTest(bookToken: string, params: CreateReaderTestParams): Promise<ReaderTest>
   getReaderTestProgress(bookToken: string, testToken: string): Promise<ReaderTestProgress>
   getReaderTest(bookToken: string, testToken: string): Promise<ReaderTest>
+
+  // MCP File Operations
+  readFile(bookToken: string, path: string): Promise<McpFileReadResponse>
+  createFile(bookToken: string, params: CreateFileParams): Promise<McpFileCreateResponse>
+  updateFile(bookToken: string, params: UpdateFileParams): Promise<McpFileUpdateResponse>
+  deleteFile(bookToken: string, params: DeleteFileParams): Promise<McpFileDeleteResponse>
+  appendToFile(bookToken: string, params: AppendFileParams): Promise<McpFileAppendResponse>
+  searchFiles(bookToken: string, params: SearchParams): Promise<McpSearchResponse>
 }
 ```
 
@@ -311,8 +373,9 @@ slima-mcp-server (此專案)
 |------|------|--------|
 | `list_commits` | 列出版本歷史 | 中 |
 | `compare_commits` | 比較兩個版本 | 低 |
-| `search_content` | 全書搜尋 | 中 |
 | `get_outline` | 取得大綱 | 中 |
+| `create_branch` | 建立分支 | 低 |
+| `switch_branch` | 切換分支 | 低 |
 
 ### Resources 和 Prompts
 
@@ -349,4 +412,6 @@ Thin Client 架構的優點：
 - **Package Name**: `slima-mcp`
 - **Version**: 0.1.0
 - **MCP Protocol**: 1.x
-- **最後更新**: 2026-01-27
+- **Tools**: 13 tools (4 books + 1 content + 2 beta-reader + 6 files)
+- **Tests**: 100 passing (88.66% coverage)
+- **最後更新**: 2026-01-28

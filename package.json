@@ -4,16 +4,24 @@
   "description": "MCP Server for Slima - AI Writing IDE for Novel Authors. Works with Claude, ChatGPT, Gemini, Cursor, and any MCP-compatible AI tool.",
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "slima-mcp": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm run test:run"
   },
   "keywords": [
     "mcp",
@@ -31,6 +39,14 @@
   ],
   "author": "Slima Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/slima-app/slima-mcp.git"
+  },
+  "homepage": "https://slima.ai",
+  "bugs": {
+    "url": "https://github.com/slima-app/slima-mcp/issues"
+  },
   "engines": {
     "node": ">=20.0.0"
   },
