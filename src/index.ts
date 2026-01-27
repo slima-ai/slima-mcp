@@ -15,7 +15,8 @@ import { logger } from './utils/logger.js';
 import { loadToken, getCredentialsFilePath } from './utils/token-storage.js';
 import { runAuth, runLogout, runStatus } from './cli/auth.js';
 
-const VERSION = '0.1.0';
+declare const __VERSION__: string;
+const VERSION = __VERSION__;
 
 function showHelp(): void {
   console.log(`

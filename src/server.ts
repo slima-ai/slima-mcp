@@ -10,6 +10,8 @@ import { registerBetaReaderTools } from './tools/beta-reader.js';
 import { registerFileTools } from './tools/files.js';
 import { logger } from './utils/logger.js';
 
+declare const __VERSION__: string;
+
 export interface ServerConfig {
   apiToken: string;
   baseUrl?: string;
@@ -26,7 +28,7 @@ export function createSlimaServer(config: ServerConfig): McpServer {
 
   const server = new McpServer({
     name: 'slima',
-    version: '0.1.0',
+    version: __VERSION__,
   });
 
   // 註冊工具
