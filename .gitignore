@@ -4,10 +4,14 @@ node_modules/
 # Build output
 dist/
 
-# Environment
+# Environment & Secrets
 .env
 .env.local
 .env.*.local
+*.key
+*.pem
+credentials.json
+.slima/
 
 # IDE
 .vscode/

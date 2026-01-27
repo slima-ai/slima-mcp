@@ -143,7 +143,25 @@ function getSuccessHtml(): string {
 /**
  * 錯誤頁面 HTML
  */
+/**
+ * HTML escape to prevent XSS
+ */
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  };
+  return text.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+/**
+ * 錯誤頁面 HTML
+ */
 function getErrorHtml(message: string): string {
+  const safeMessage = escapeHtml(message);
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -184,7 +202,7 @@ function getErrorHtml(message: string): string {
   <div class="container">
     <div class="error-icon">❌</div>
     <h1>Authentication Failed</h1>
-    <p>${message}</p>
+    <p>${safeMessage}</p>
   </div>
 </body>
 </html>`;
