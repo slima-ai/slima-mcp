@@ -41,11 +41,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/slima-app/slima-mcp.git"
+    "url": "https://github.com/slima-ai/slima-mcp.git"
   },
   "homepage": "https://slima.ai",
   "bugs": {
-    "url": "https://github.com/slima-app/slima-mcp/issues"
+    "url": "https://github.com/slima-ai/slima-mcp/issues"
   },
   "engines": {
     "node": ">=20.0.0"
