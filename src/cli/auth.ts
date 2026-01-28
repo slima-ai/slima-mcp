@@ -11,7 +11,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { saveToken, loadToken, deleteToken, getCredentialsFilePath } from '../utils/token-storage.js';
+import { saveToken, loadToken, deleteToken, getCredentialsFilePath } from './token-storage.js';
 
 // 認證使用 API 伺服器（處理 OAuth 和 session）
 const DEFAULT_API_URL = 'https://api.slima.ai';

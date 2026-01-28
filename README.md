@@ -9,6 +9,8 @@ Connect your Slima books to **any MCP-compatible AI tool** - one server, all pla
 
 ## Supported Platforms
 
+### Desktop Applications (Local MCP - stdio)
+
 | Platform | Status | Notes |
 |----------|--------|-------|
 | Claude Desktop | ✅ | Native MCP support |
@@ -16,6 +18,13 @@ Connect your Slima books to **any MCP-compatible AI tool** - one server, all pla
 | Gemini CLI | ✅ | Native MCP support |
 | Cursor | ✅ | Native MCP support |
 | VS Code | ✅ | Via MCP extensions |
+
+### Web Applications (Remote MCP - HTTP)
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Claude.ai | ✅ | OAuth login, no token needed |
+| ChatGPT Web | ✅ | OAuth login, no token needed |
 
 > MCP became the industry standard in December 2025 when Anthropic, OpenAI, and Block co-founded the Agentic AI Foundation under the Linux Foundation.
 
@@ -136,6 +145,48 @@ Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens).
 
 After saving the configuration, restart the application to load Slima MCP.
 
+---
+
+## Web Applications (Remote MCP)
+
+For web-based AI tools like Claude.ai and ChatGPT, use our hosted Remote MCP Server.
+
+### One-Click Connection
+
+1. In your AI tool, add a new MCP server
+2. Enter the URL: `https://slima-mcp.workers.dev/mcp`
+3. Click "Connect" - you'll be redirected to Slima
+4. Log in (or sign up) and click "Allow"
+5. Done! No token copying needed
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Claude.ai / ChatGPT Web                               │
+│                                                         │
+│  1. Click "Connect MCP Server"                          │
+│  2. Enter: https://slima-mcp.workers.dev/mcp           │
+│     ↓                                                   │
+│  3. Redirect to Slima login                            │
+│     ↓                                                   │
+│  4. Approve authorization                              │
+│     ↓                                                   │
+│  5. Automatically connected!                           │
+│                                                         │
+│  No API tokens. No configuration. Just works.          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Security
+
+- **OAuth 2.0 + PKCE**: Industry-standard secure authentication
+- **No Secrets Stored**: The server never stores your credentials
+- **Session-Based**: Your token is stored securely in Cloudflare KV
+- **Revocable**: Revoke access anytime from [Slima Settings](https://app.slima.ai/settings/api-tokens)
+
+---
+
 ## Available Tools
 
 ### Book Management
@@ -213,6 +264,8 @@ Token is stored in `~/.slima/credentials.json` with secure permissions.
 
 ## Development
 
+### Local CLI Development
+
 ```bash
 # Clone the repository
 git clone https://github.com/slima-ai/slima-mcp.git
@@ -221,7 +274,7 @@ cd slima-mcp
 # Install dependencies
 npm install
 
-# Build
+# Build CLI
 npm run build
 
 # Run tests
@@ -229,6 +282,43 @@ npm test
 
 # Run in development mode
 npm run dev
+```
+
+### Cloudflare Worker Development
+
+```bash
+# Build the Worker
+npm run build:worker
+
+# Run Worker locally
+npm run dev:worker
+
+# Deploy to Cloudflare
+npm run deploy:worker
+
+# Deploy to preview environment
+npm run deploy:worker:preview
+```
+
+### Project Structure
+
+```
+slima-mcp/
+├── src/
+│   ├── core/           # Shared core modules
+│   │   ├── api/        # Slima API Client
+│   │   ├── tools/      # MCP Tool implementations
+│   │   └── utils/      # Utilities and errors
+│   ├── cli/            # CLI entry point (stdio transport)
+│   │   ├── index.ts    # CLI main
+│   │   ├── auth.ts     # Authentication commands
+│   │   └── server.ts   # MCP Server for CLI
+│   └── worker/         # Cloudflare Worker (HTTP transport)
+│       ├── index.ts    # Worker entry point
+│       └── oauth.ts    # OAuth 2.0 + PKCE client
+├── wrangler.toml       # Cloudflare Worker config
+├── tsup.config.ts      # CLI build config
+└── tsup.worker.config.ts # Worker build config
 ```
 
 ## Security

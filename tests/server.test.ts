@@ -3,26 +3,26 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSlimaServer } from '../src/server.js';
+import { createSlimaServer } from '../src/cli/server.js';
 
-// Mock the tool registration functions
-vi.mock('../src/tools/books.js', () => ({
+// Mock the tool registration functions (using core/ paths)
+vi.mock('../src/core/tools/books.js', () => ({
   registerBookTools: vi.fn(),
 }));
-vi.mock('../src/tools/content.js', () => ({
+vi.mock('../src/core/tools/content.js', () => ({
   registerContentTools: vi.fn(),
 }));
-vi.mock('../src/tools/beta-reader.js', () => ({
+vi.mock('../src/core/tools/beta-reader.js', () => ({
   registerBetaReaderTools: vi.fn(),
 }));
-vi.mock('../src/tools/files.js', () => ({
+vi.mock('../src/core/tools/files.js', () => ({
   registerFileTools: vi.fn(),
 }));
 
-import { registerBookTools } from '../src/tools/books.js';
-import { registerContentTools } from '../src/tools/content.js';
-import { registerBetaReaderTools } from '../src/tools/beta-reader.js';
-import { registerFileTools } from '../src/tools/files.js';
+import { registerBookTools } from '../src/core/tools/books.js';
+import { registerContentTools } from '../src/core/tools/content.js';
+import { registerBetaReaderTools } from '../src/core/tools/beta-reader.js';
+import { registerFileTools } from '../src/core/tools/files.js';
 
 describe('createSlimaServer', () => {
   beforeEach(() => {
@@ -67,7 +67,8 @@ describe('createSlimaServer', () => {
     );
     expect(registerBetaReaderTools).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({})
+      expect.objectContaining({}),
+      expect.objectContaining({}) // logger
     );
     expect(registerFileTools).toHaveBeenCalledWith(
       expect.anything(),

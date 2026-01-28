@@ -1,0 +1,47 @@
+# Slima MCP Server - Cloudflare Worker Configuration
+# https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "slima-mcp"
+main = "dist/worker/index.js"
+compatibility_date = "2025-01-01"
+
+# Build configuration
+[build]
+command = "npm run build:worker"
+
+# Environment variables
+[vars]
+SLIMA_API_URL = "https://api.slima.ai"
+OAUTH_CLIENT_ID = "slima-mcp-worker"
+
+# KV Namespace for OAuth sessions
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "24cf517e9e5e48e8903924e01cc0d1a2"
+
+# Preview environment (for development)
+[env.preview]
+name = "slima-mcp-preview"
+vars = { SLIMA_API_URL = "https://staging-api.slima.ai", OAUTH_CLIENT_ID = "slima-mcp-worker-dev" }
+
+[[env.preview.kv_namespaces]]
+binding = "OAUTH_KV"
+id = "your-preview-kv-namespace-id"  # Replace after `wrangler kv:namespace create OAUTH_KV --preview`
+
+# Development environment
+[env.dev]
+name = "slima-mcp-dev"
+vars = { SLIMA_API_URL = "http://localhost:3000", OAUTH_CLIENT_ID = "slima-mcp-worker-dev" }
+
+[[env.dev.kv_namespaces]]
+binding = "OAUTH_KV"
+id = "your-dev-kv-namespace-id"  # Replace after `wrangler kv:namespace create OAUTH_KV --env dev`
+
+# Limits (free tier)
+# - 100,000 requests/day
+# - 10ms CPU time per request
+# - 128MB memory
+
+# Observability
+[observability]
+enabled = true

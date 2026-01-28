@@ -15,7 +15,13 @@
   ],
   "scripts": {
     "build": "tsup",
+    "build:cli": "tsup",
+    "build:worker": "tsup --config tsup.worker.config.ts",
+    "build:all": "npm run build:cli && npm run build:worker",
     "dev": "tsup --watch",
+    "dev:worker": "wrangler dev",
+    "deploy:worker": "npm run build:worker && wrangler deploy",
+    "deploy:worker:preview": "npm run build:worker && wrangler deploy --env preview",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -52,13 +58,16 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "hono": "^4.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^2.1.9",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "wrangler": "^3.0.0"
   }
 }

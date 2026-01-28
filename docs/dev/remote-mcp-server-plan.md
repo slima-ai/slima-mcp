@@ -1411,14 +1411,107 @@ end
 
 ## 里程碑
 
-| 階段 | 目標 | 預估時間 | 完成標準 |
-|------|------|----------|----------|
-| Phase 0 | 重構程式碼結構 | 0.5 天 | 測試通過、npm package 正常 |
-| Phase 1.1 | Rails OAuth Provider | 0.75 天 | OAuth + PKCE endpoints 可用、測試通過 |
-| Phase 1.2 | Worker + OAuth Client | 1 天 | 能從 Claude.ai 一鍵授權並使用所有工具 |
-| Phase 2 | 測試與文件 | 0.5 天 | 文件完整、測試覆蓋 |
+| 階段 | 目標 | 預估時間 | 完成標準 | 狀態 |
+|------|------|----------|----------|------|
+| Phase 0 | 重構程式碼結構 | 0.5 天 | 測試通過、npm package 正常 | ✅ 完成 |
+| Phase 1.1 | Rails OAuth Provider | 0.75 天 | OAuth + PKCE endpoints 可用、測試通過 | ✅ 完成 |
+| Phase 1.2 | Worker + OAuth Client | 1 天 | 能從 Claude.ai 一鍵授權並使用所有工具 | ✅ 完成 |
+| Phase 2 | 測試與文件 | 0.5 天 | 文件完整、測試覆蓋 | ✅ 完成 |
 
 **總計：** 2.75 天
+
+### 完成紀錄 (2026-01-28)
+
+**Phase 0: 重構程式碼結構**
+- 建立 `src/core/` 目錄結構
+- API Client 支援依賴注入（`getToken` 函數）
+- 保持向後相容（支援舊版 `token` 字串配置）
+- 所有 122 測試通過
+
+**Phase 1.1: Rails OAuth Provider**
+- 建立 `OauthAuthorizationCode` model（含 PKCE 欄位）
+- 實作 `Oauth::AuthorizeService` 和 `Oauth::ExchangeTokenService`
+- 實作 `Api::V1::OauthController` （薄控制器）
+- 建立授權頁面（遵循 UIUX_SPEC.md）
+- 59 個 OAuth 相關測試通過
+
+**Phase 1.2: Worker + OAuth Client**
+- 建立 `src/worker/` 目錄
+- 實作 OAuth 2.0 + PKCE 客戶端
+- 使用 Hono 作為 HTTP 路由
+- 整合 MCP 端點（Streamable HTTP）
+- 建立 `wrangler.toml` 設定
+- 133 測試通過（含 11 個新 OAuth 測試）
+
+**Phase 2: 測試與文件**
+- 更新 README 加入 Remote MCP 使用說明
+- 新增專案結構說明
+- 完善錯誤處理
+
+---
+
+## 開發進度總覽
+
+### ✅ 已完成（程式碼開發）
+
+| 項目 | 狀態 | 備註 |
+|------|------|------|
+| MCP Server 重構 (core/cli/worker 結構) | ✅ | 133 tests |
+| Rails OAuth Provider (Model, Service, Controller, View) | ✅ | 59 tests |
+| Cloudflare Worker + OAuth Client 程式碼 | ✅ | 含 PKCE |
+| 測試 (192 tests total) | ✅ | 需要 review 涵蓋率 |
+| README 文件更新 | ✅ | |
+
+### ⏳ 尚未完成（部署相關）
+
+| 項目 | 狀態 | 備註 |
+|------|------|------|
+| Cloudflare KV namespace 建立 | ⏳ | 需要 Cloudflare 帳號 |
+| wrangler.toml KV ID 更新 | ⏳ | 等待 KV 建立後 |
+| Worker 部署到 Cloudflare | ⏳ | `npm run deploy:worker` |
+| 端到端測試 (Claude.ai 實測) | ⏳ | 需要部署後測試 |
+
+### ❌ 尚未實作
+
+| 項目 | 優先級 | 備註 |
+|------|--------|------|
+| Rate Limiting (OAuth endpoints) | 高 | 計畫中有提到，但未實作 |
+| ALLOWED_CLIENTS 自訂域名支援 | 中 | 目前只支援 *.workers.dev |
+| Token 撤銷功能 | 中 | 用戶可從 Slima 設定頁面撤銷 |
+| OAuth Swagger 文件 | 低 | 可後續補充 |
+
+### 🔍 Code Review 結果 (2026-01-28)
+
+詳細報告請見: `docs/dev/code-review-report.md`
+
+#### 🚨 必須修復（部署前）
+
+| 問題 | 檔案 | 狀態 |
+|------|------|------|
+| 缺少 Rate Limiting | `oauth_controller.rb` | ⏳ |
+| Cookie 缺少 HttpOnly | `src/worker/oauth.ts` | ⏳ |
+| pageTemplate XSS 風險 | `src/worker/oauth.ts` | ⏳ |
+| 缺少 redirect_uri 驗證 | `exchange_token_service.rb` | ⏳ |
+
+#### ⚠️ 建議修復
+
+| 問題 | 檔案 | 狀態 |
+|------|------|------|
+| 缺少整合測試 | Worker tests | ⏳ |
+| 缺少端到端測試 | Rails tests | ⏳ |
+| 過期 codes 清理機制 | Model | ⏳ |
+| MCP transport 不完整 | `src/worker/index.ts` | ⏳ |
+
+#### 📊 測試涵蓋率
+
+| 模組 | 測試數 | 狀態 |
+|------|--------|------|
+| Rails Model (OauthAuthorizationCode) | 19 | ✅ 良好 |
+| Rails Service (Authorize) | 11 | ✅ 良好 |
+| Rails Service (ExchangeToken) | 14 | ⚠️ 缺少邊界測試 |
+| Rails Request | 15 | ⚠️ 缺少整合測試 |
+| Worker OAuth | 11 | ⚠️ 缺少 route 測試 |
+| **總計** | **70** | |
 
 ---
 

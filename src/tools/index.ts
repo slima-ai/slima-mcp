@@ -1,4 +1,5 @@
-export { registerBookTools } from './books.js';
-export { registerContentTools } from './content.js';
-export { registerBetaReaderTools } from './beta-reader.js';
-export { registerFileTools } from './files.js';
+/**
+ * @deprecated This file is kept for backwards compatibility.
+ * Import from '../core/tools/index.js' instead.
+ */
+export * from '../core/tools/index.js';
