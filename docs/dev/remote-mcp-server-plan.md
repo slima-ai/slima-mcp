@@ -18,7 +18,7 @@
 
 ### 目標
 
-在同一個 Repository 中，新增 **Remote MCP Server** 支援，部署到 Cloudflare Workers。
+在同一個 Repository 中，新增 **Remote MCP Server** 支援，部署到 Cloudflare Workers，並提供 OAuth 認證讓用戶一鍵授權。
 
 ---
 
@@ -40,24 +40,30 @@
 - 全球邊緣部署，無冷啟動
 - 免費方案足夠：100,000 requests/day
 - 官方提供 MCP 模板和 SDK
+- 內建 KV 儲存（用於 OAuth token）
 
 **限制：**
 - CPU 時間限制：10ms (免費) / 50ms (付費)
 - 部分 Node.js API 不可用（需要適配）
 
-### 3. 認證方案
+### 3. 認證方案：OAuth 2.0
 
-| 方案 | 優點 | 缺點 | 階段 |
-|------|------|------|------|
-| **API Token** | 實作簡單、重用現有機制 | 用戶需手動設定 | Phase 1 ⭐ |
-| **OAuth** | 最佳用戶體驗 | 需要 Slima 成為 OAuth Provider | Phase 3（未來） |
+**用戶體驗：**
+```
+用戶在 Claude.ai 點擊「連接 Slima」
+    ↓
+跳轉到 Slima 登入頁（如果尚未登入）
+    ↓
+顯示授權確認：「允許 Slima MCP 存取你的書籍？」
+    ↓
+點擊「允許」→ 自動連接完成！
+```
 
-**決策：先用 API Token，未來再加 OAuth**
-
-現有的 `slima-mcp auth` 已經可以產生 API Token，用戶只需要：
-1. 執行 `slima-mcp auth` 或從 Slima 設定頁取得 Token
-2. 在 Claude.ai 連接 MCP 時輸入 Token
-3. 完成！
+**為什麼選擇 OAuth：**
+- ✅ 最佳用戶體驗（不需複製貼上 token）
+- ✅ 重用現有 ApiToken 模型
+- ✅ 重用現有 Google OAuth 登入
+- ✅ Cloudflare 有 `workers-oauth-provider` 函式庫
 
 ---
 
@@ -88,7 +94,7 @@ slima-mcp/                        # 現有 Repository
 │   │
 │   └── worker/                   # 🆕 Cloudflare Worker 入口
 │       ├── index.ts              # Worker 主程式
-│       └── auth.ts               # Token 驗證
+│       └── oauth.ts              # OAuth Client 整合
 │
 ├── package.json                  # npm package 設定
 ├── wrangler.toml                 # 🆕 Cloudflare Worker 設定
@@ -112,141 +118,323 @@ slima-mcp/                        # 現有 Repository
 │           │                                    │                │
 │       stdio                           HTTPS (Streamable HTTP)   │
 │           │                                    │                │
-│  ┌────────▼────────┐              ┌────────────▼────────────┐  │
-│  │  slima-mcp      │              │  slima-mcp (Worker)     │  │
-│  │  (npm package)  │              │  Cloudflare Workers     │  │
-│  │                 │              │                         │  │
-│  │  ┌───────────┐  │              │  ┌───────────────────┐  │  │
-│  │  │ CLI Entry │  │              │  │  Worker Entry     │  │  │
-│  │  │ (stdio)   │  │              │  │  (HTTP)           │  │  │
-│  │  └─────┬─────┘  │              │  └─────────┬─────────┘  │  │
-│  │        │        │              │            │            │  │
-│  │  ┌─────▼─────────────────────────────────────▼─────┐     │  │
-│  │  │              共用核心 (core/)                    │     │  │
-│  │  │  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │     │  │
-│  │  │  │  Tools  │  │   API   │  │     Utils       │ │     │  │
-│  │  │  │ 定義    │  │  Client │  │   Formatters    │ │     │  │
-│  │  │  └─────────┘  └─────────┘  └─────────────────┘ │     │  │
-│  │  └─────────────────────┬───────────────────────────┘     │  │
-│  │                        │                                 │  │
-│  └────────────────────────┼─────────────────────────────────┘  │
-│                           │                                    │
-└───────────────────────────┼────────────────────────────────────┘
-                            │
-                      HTTPS (REST API)
-                            │
-                 ┌──────────▼──────────┐
-                 │   Slima Rails API   │
-                 │   (api.slima.ai)    │
-                 └─────────────────────┘
+└───────────┼────────────────────────────────────┼────────────────┘
+            │                                    │
+   ┌────────▼────────┐              ┌────────────▼────────────┐
+   │  slima-mcp      │              │  slima-mcp (Worker)     │
+   │  (npm package)  │              │  Cloudflare Workers     │
+   │                 │              │                         │
+   │  使用本地 token │              │  OAuth 認證流程         │
+   │  ~/.slima/      │              │  ┌───────────────────┐  │
+   │  credentials    │              │  │ 1. 導向 Slima 授權│  │
+   └────────┬────────┘              │  │ 2. 用戶登入並授權 │  │
+            │                       │  │ 3. 取得 token     │  │
+            │                       │  │ 4. 儲存到 KV      │  │
+            │                       │  └───────────────────┘  │
+            │                       └────────────┬────────────┘
+            │                                    │
+   ┌────────▼────────────────────────────────────▼────────────┐
+   │              共用核心 (core/)                              │
+   │  ┌─────────┐  ┌─────────┐  ┌─────────────────┐           │
+   │  │  Tools  │  │   API   │  │     Utils       │           │
+   │  │ 14 個   │  │  Client │  │   Formatters    │           │
+   │  └─────────┘  └─────────┘  └─────────────────┘           │
+   └─────────────────────────┬────────────────────────────────┘
+                             │
+                       HTTPS (REST API)
+                             │
+              ┌──────────────▼──────────────┐
+              │      Slima Rails API        │
+              │      (api.slima.ai)         │
+              ├─────────────────────────────┤
+              │  🆕 OAuth Provider          │
+              │  - GET  /oauth/authorize    │
+              │  - POST /oauth/token        │
+              │                             │
+              │  既有 API                   │
+              │  - Books, Files, Commits    │
+              │  - MCP Files API            │
+              │  - Bearer Token 認證        │
+              └─────────────────────────────┘
 ```
 
-### 程式碼共用策略
+---
 
-```typescript
-// src/core/tools/books.ts - 純粹的工具邏輯（平台無關）
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { SlimaApiClient } from '../api/client.js';
-import { formatBooksResponse } from '../utils/formatters.js';
+## OAuth 實作細節
 
-export function registerBookTools(server: McpServer, client: SlimaApiClient) {
-  server.tool(
-    'list_books',
-    'List all books in your Slima library',
-    {},
-    async () => {
-      const books = await client.listBooks();
-      return {
-        content: [{ type: 'text', text: formatBooksResponse(books) }],
-      };
+### Rails 端：新增 OAuth Provider
+
+#### 1. 資料庫 Migration
+
+```ruby
+# db/migrate/xxx_create_oauth_authorization_codes.rb
+class CreateOAuthAuthorizationCodes < ActiveRecord::Migration[7.2]
+  def change
+    create_table :oauth_authorization_codes do |t|
+      t.references :user, null: false, foreign_key: true
+      t.string :code, null: false, index: { unique: true }
+      t.string :client_id, null: false
+      t.string :redirect_uri, null: false
+      t.string :state
+      t.datetime :expires_at, null: false
+      t.datetime :used_at  # 防止重複使用
+      t.timestamps
+    end
+  end
+end
+```
+
+#### 2. Model
+
+```ruby
+# app/models/oauth_authorization_code.rb
+class OAuthAuthorizationCode < ApplicationRecord
+  belongs_to :user
+
+  validates :code, presence: true, uniqueness: true
+  validates :client_id, :redirect_uri, :expires_at, presence: true
+
+  before_validation :generate_code, on: :create
+  before_validation :set_expiration, on: :create
+
+  scope :valid, -> { where(used_at: nil).where('expires_at > ?', Time.current) }
+
+  def expired?
+    expires_at < Time.current
+  end
+
+  def used?
+    used_at.present?
+  end
+
+  def use!
+    update!(used_at: Time.current)
+  end
+
+  private
+
+  def generate_code
+    self.code ||= SecureRandom.urlsafe_base64(32)
+  end
+
+  def set_expiration
+    self.expires_at ||= 10.minutes.from_now
+  end
+end
+```
+
+#### 3. Controller
+
+```ruby
+# app/controllers/oauth_controller.rb
+class OAuthController < ApplicationController
+  # 允許的 Client（目前只有我們自己的 Worker）
+  ALLOWED_CLIENTS = {
+    'slima-mcp-worker' => {
+      redirect_uri_pattern: %r{\Ahttps://slima-mcp\..*\.workers\.dev/callback\z}
     }
-  );
+  }.freeze
 
-  server.tool(
-    'create_book',
-    'Create a new book',
-    { title: z.string(), author_name: z.string().optional() },
-    async ({ title, author_name }) => {
-      const book = await client.createBook({ title, authorName: author_name });
-      return {
-        content: [{ type: 'text', text: `Book created: ${book.token}` }],
-      };
+  before_action :validate_client, only: [:authorize, :confirm]
+  before_action :authenticate_user!, only: [:authorize, :confirm]
+
+  # GET /oauth/authorize
+  # 顯示授權確認頁面
+  def authorize
+    # 如果用戶已授權過（有有效的 token），可以自動授權
+    # 或顯示確認頁面讓用戶選擇
+    @client_id = params[:client_id]
+    @redirect_uri = params[:redirect_uri]
+    @state = params[:state]
+  end
+
+  # POST /oauth/authorize
+  # 用戶確認授權
+  def confirm
+    code = OAuthAuthorizationCode.create!(
+      user: current_user,
+      client_id: params[:client_id],
+      redirect_uri: params[:redirect_uri],
+      state: params[:state]
+    )
+
+    redirect_uri = URI.parse(params[:redirect_uri])
+    redirect_uri.query = URI.encode_www_form(
+      code: code.code,
+      state: params[:state]
+    )
+
+    redirect_to redirect_uri.to_s, allow_other_host: true
+  end
+
+  # POST /oauth/token
+  # 交換 authorization code 取得 access token
+  def token
+    code = OAuthAuthorizationCode.valid.find_by(
+      code: params[:code],
+      client_id: params[:client_id]
+    )
+
+    if code.nil?
+      render json: { error: 'invalid_grant', error_description: 'Invalid or expired code' },
+             status: :bad_request
+      return
+    end
+
+    # 標記 code 已使用
+    code.use!
+
+    # 建立 API Token（重用現有模型）
+    api_token = code.user.api_tokens.create!(
+      name: "MCP Remote (#{Time.current.strftime('%Y-%m-%d %H:%M')})",
+      expires_at: 30.days.from_now
+    )
+
+    render json: {
+      access_token: api_token.token,
+      token_type: 'Bearer',
+      expires_in: 30.days.to_i
     }
-  );
+  end
 
-  // ... 其他工具
-}
+  private
 
-// src/core/tools/index.ts - 統一註冊所有工具
-export function registerAllTools(server: McpServer, client: SlimaApiClient) {
-  registerBookTools(server, client);
-  registerFileTools(server, client);
-  registerBetaReaderTools(server, client);
-}
+  def validate_client
+    client_id = params[:client_id]
+    redirect_uri = params[:redirect_uri]
+
+    client = ALLOWED_CLIENTS[client_id]
+
+    unless client && redirect_uri&.match?(client[:redirect_uri_pattern])
+      render json: { error: 'invalid_client' }, status: :bad_request
+    end
+  end
+end
 ```
 
-```typescript
-// src/cli/server.ts - stdio 版本
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SlimaApiClient } from '../core/api/client.js';
-import { registerAllTools } from '../core/tools/index.js';
+#### 4. Routes
 
-export async function startServer(config: { token: string; baseUrl: string }) {
-  const server = new McpServer({ name: 'slima', version: __VERSION__ });
-  const client = new SlimaApiClient(config);
-
-  registerAllTools(server, client);
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
+```ruby
+# config/routes.rb
+scope :oauth do
+  get  :authorize, to: 'oauth#authorize'
+  post :authorize, to: 'oauth#confirm'
+  post :token,     to: 'oauth#token'
+end
 ```
 
+#### 5. 授權頁面 View
+
+```erb
+<%# app/views/oauth/authorize.html.erb %>
+<div class="oauth-consent">
+  <h1>授權 Slima MCP</h1>
+
+  <p>
+    <strong>Slima MCP</strong> 想要存取你的 Slima 帳號：
+  </p>
+
+  <ul>
+    <li>讀取你的書籍列表</li>
+    <li>讀取和編輯書籍內容</li>
+    <li>取得 AI Beta Reader 回饋</li>
+  </ul>
+
+  <%= form_tag oauth_authorize_path, method: :post do %>
+    <%= hidden_field_tag :client_id, @client_id %>
+    <%= hidden_field_tag :redirect_uri, @redirect_uri %>
+    <%= hidden_field_tag :state, @state %>
+
+    <div class="actions">
+      <%= submit_tag '允許', class: 'btn-primary' %>
+      <%= link_to '拒絕', @redirect_uri + '?error=access_denied', class: 'btn-secondary' %>
+    </div>
+  <% end %>
+</div>
+```
+
+### Worker 端：OAuth Client
+
 ```typescript
-// src/worker/index.ts - Cloudflare Worker 版本
-import { McpAgent } from '@cloudflare/agents';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SlimaApiClient } from '../core/api/client.js';
-import { registerAllTools } from '../core/tools/index.js';
+// src/worker/oauth.ts
+import { Hono } from 'hono';
 
 interface Env {
   SLIMA_API_URL: string;
+  OAUTH_CLIENT_ID: string;
+  OAUTH_KV: KVNamespace;  // 儲存 user tokens
 }
 
-export class SlimaMcpWorker extends McpAgent<Env> {
-  server = new McpServer({ name: 'slima', version: '1.0.0' });
+export function createOAuthRoutes(app: Hono<{ Bindings: Env }>) {
+  // 開始 OAuth 流程
+  app.get('/auth/login', async (c) => {
+    const state = crypto.randomUUID();
+    const redirectUri = `${new URL(c.req.url).origin}/callback`;
 
-  async init() {
-    // 從請求 header 取得用戶的 API Token
-    const token = this.request.headers.get('Authorization')?.replace('Bearer ', '');
+    // 儲存 state 用於驗證（防 CSRF）
+    await c.env.OAUTH_KV.put(`state:${state}`, '1', { expirationTtl: 600 });
 
-    if (!token) {
-      throw new Error('Missing API token');
+    const authUrl = new URL(`${c.env.SLIMA_API_URL}/oauth/authorize`);
+    authUrl.searchParams.set('client_id', c.env.OAUTH_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('response_type', 'code');
+
+    return c.redirect(authUrl.toString());
+  });
+
+  // OAuth callback
+  app.get('/callback', async (c) => {
+    const code = c.req.query('code');
+    const state = c.req.query('state');
+    const error = c.req.query('error');
+
+    if (error) {
+      return c.html(`<h1>授權失敗</h1><p>${error}</p>`);
     }
 
-    const client = new SlimaApiClient({
-      baseUrl: this.env.SLIMA_API_URL,
-      token,
+    // 驗證 state
+    const storedState = await c.env.OAUTH_KV.get(`state:${state}`);
+    if (!storedState) {
+      return c.html('<h1>無效的請求</h1>', 400);
+    }
+    await c.env.OAUTH_KV.delete(`state:${state}`);
+
+    // 交換 code 取得 token
+    const tokenResponse = await fetch(`${c.env.SLIMA_API_URL}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code,
+        client_id: c.env.OAUTH_CLIENT_ID,
+        redirect_uri: `${new URL(c.req.url).origin}/callback`,
+      }),
     });
 
-    registerAllTools(this.server, client);
-  }
+    if (!tokenResponse.ok) {
+      return c.html('<h1>授權失敗</h1>', 400);
+    }
+
+    const { access_token } = await tokenResponse.json();
+
+    // 產生 session ID 並儲存 token
+    const sessionId = crypto.randomUUID();
+    await c.env.OAUTH_KV.put(`session:${sessionId}`, access_token, {
+      expirationTtl: 30 * 24 * 60 * 60, // 30 days
+    });
+
+    // 設定 cookie 並顯示成功頁面
+    return c.html(`
+      <script>
+        document.cookie = "session=${sessionId}; path=/; secure; samesite=strict; max-age=${30 * 24 * 60 * 60}";
+        window.close();
+      </script>
+      <h1>授權成功！</h1>
+      <p>你可以關閉此視窗。</p>
+    `);
+  });
 }
-
-export default {
-  async fetch(request: Request, env: Env) {
-    const url = new URL(request.url);
-
-    if (url.pathname === '/mcp') {
-      return SlimaMcpWorker.handle(request, env);
-    }
-
-    return new Response('Slima MCP Server. Connect via /mcp endpoint.', {
-      status: 200,
-    });
-  },
-};
 ```
 
 ---
@@ -273,25 +461,41 @@ export default {
 
 ---
 
-### Phase 1: 新增 Cloudflare Worker 支援
+### Phase 1: Cloudflare Worker + OAuth
 
-**目標：** 實作 HTTP transport，部署到 Cloudflare Workers
+**目標：** 實作 HTTP transport 和 OAuth 認證
+
+#### 1.1 Rails 端（OAuth Provider）
+
+**任務：**
+1. 建立 `OAuthAuthorizationCode` model 和 migration
+2. 實作 `OAuthController`（authorize, token endpoints）
+3. 建立授權確認頁面
+4. 新增路由
+5. 撰寫測試
+
+**產出：**
+- `GET /oauth/authorize` - 授權頁面
+- `POST /oauth/authorize` - 確認授權
+- `POST /oauth/token` - 交換 token
+
+**預估：** 0.5 天
+
+#### 1.2 Worker 端
 
 **任務：**
 1. 建立 `src/worker/` 目錄
 2. 實作 Worker 入口（使用共用的 core）
-3. 新增 `wrangler.toml` 設定
-4. 更新建置設定（tsup 雙 target）
-5. 部署並測試
-
-**認證方式（Phase 1）：**
-- 用戶在 Claude.ai 連接時提供 API Token
-- Worker 從 Authorization header 取得 Token
-- 使用此 Token 呼叫 Slima API
+3. 實作 OAuth Client（login, callback）
+4. 新增 `wrangler.toml` 設定
+5. 設定 Cloudflare KV（儲存 session）
+6. 更新建置設定（tsup 雙 target）
+7. 部署並測試
 
 **產出：**
 - 可部署的 Cloudflare Worker
 - `https://slima-mcp.xxx.workers.dev/mcp`
+- OAuth 認證流程完整
 - 所有 14 個工具可用
 
 **預估：** 1 天
@@ -304,9 +508,10 @@ export default {
 
 **任務：**
 1. 新增 Worker 相關測試
-2. 更新 README（新增 Remote MCP 使用說明）
-3. 錯誤處理優化
-4. 新增使用範例
+2. 新增 OAuth 端到端測試
+3. 更新 README（新增 Remote MCP 使用說明）
+4. 錯誤處理優化
+5. 新增使用範例
 
 **產出：**
 - 完整測試覆蓋
@@ -316,28 +521,16 @@ export default {
 
 ---
 
-### Phase 3（未來）: OAuth 整合
-
-**目標：** 提升用戶體驗，實作 OAuth 認證
-
-**任務：**
-1. Slima Rails 實作 OAuth Provider
-2. Worker 實作 OAuth Client
-3. 新增 Cloudflare KV 儲存 token
-
-**此階段暫不實作，待 Phase 1-2 穩定後再評估需求。**
-
----
-
 ## 里程碑
 
 | 階段 | 目標 | 預估時間 | 完成標準 |
 |------|------|----------|----------|
 | Phase 0 | 重構程式碼結構 | 0.5 天 | 測試通過、npm package 正常 |
-| Phase 1 | Worker 基礎功能 | 1 天 | 能從 Claude.ai 連接並使用所有工具 |
+| Phase 1.1 | Rails OAuth Provider | 0.5 天 | OAuth endpoints 可用 |
+| Phase 1.2 | Worker + OAuth Client | 1 天 | 能從 Claude.ai 一鍵授權並使用所有工具 |
 | Phase 2 | 測試與文件 | 0.5 天 | 文件完整、測試覆蓋 |
 
-**總計：** 2 天
+**總計：** 2.5 天
 
 ---
 
@@ -369,15 +562,25 @@ compatibility_date = "2025-01-01"
 
 [vars]
 SLIMA_API_URL = "https://api.slima.ai"
+OAUTH_CLIENT_ID = "slima-mcp-worker"
+
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "your-kv-namespace-id"
 ```
 
 ### 部署流程
 
 ```bash
-# 開發
+# 1. 建立 KV namespace
+wrangler kv:namespace create OAUTH_KV
+
+# 2. 更新 wrangler.toml 中的 KV ID
+
+# 3. 開發
 npm run dev:worker          # 本地測試 Worker
 
-# 部署
+# 4. 部署
 npm run build:worker        # 建置 Worker
 npm run deploy:worker       # 部署到 Cloudflare
 
@@ -409,19 +612,17 @@ npx slima-mcp auth
 # 3. 重啟 Claude Desktop
 ```
 
-### 網頁版（新流程）
+### 網頁版（OAuth 流程）
 
-```bash
-# 1. 取得 API Token（二選一）
-npx slima-mcp auth     # 會顯示 token
-# 或從 https://app.slima.ai/settings/api-tokens 取得
+```
+1. 在 Claude.ai 點擊「連接 MCP」
+2. 輸入 URL: https://slima-mcp.xxx.workers.dev/mcp
+3. 點擊連接 → 跳轉到 Slima
+4. 登入（如果尚未登入）
+5. 點擊「允許」授權
+6. 自動返回 Claude.ai → 連接完成！
 
-# 2. 在 Claude.ai 連接 MCP
-# Settings → Connectors → Add custom connector
-# URL: https://slima-mcp.xxx.workers.dev/mcp
-# Authorization: Bearer slima_your_token_here
-
-# 3. 完成！
+整個過程不需要複製貼上任何 token。
 ```
 
 ---
@@ -433,8 +634,7 @@ npx slima-mcp auth     # 會顯示 token
 | 專案架構 | 分開 Repo / 單一 Repo | **單一 Repo** | 共用程式碼、統一維護 |
 | 平台 | Cloudflare / Vercel / 自建 | **Cloudflare Workers** | 官方 MCP 支援、免費額度高 |
 | Transport | SSE / Streamable HTTP | **Streamable HTTP** | 新標準、SSE 已棄用 |
-| 認證（Phase 1） | OAuth / API Token | **API Token** | 簡單、重用現有機制 |
-| 認證（未來） | - | OAuth | 最佳用戶體驗 |
+| 認證 | OAuth / API Token | **OAuth** | 最佳用戶體驗、一鍵授權 |
 
 ---
 
@@ -443,7 +643,7 @@ npx slima-mcp auth     # 會顯示 token
 - [Cloudflare Remote MCP Server Guide](https://developers.cloudflare.com/agents/guides/remote-mcp-server/)
 - [MCP Transports Documentation](https://modelcontextprotocol.io/docs/concepts/transports)
 - [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)
-- [Why MCP Deprecated SSE](https://blog.fka.dev/blog/2025-06-06-why-mcp-deprecated-sse-and-go-with-streamable-http/)
+- [OAuth 2.0 Specification](https://oauth.net/2/)
 
 ---
 
@@ -452,5 +652,31 @@ npx slima-mcp auth     # 會顯示 token
 | 風險 | 影響 | 緩解措施 |
 |------|------|----------|
 | Cloudflare Workers 環境限制 | 部分 Node.js API 不可用 | 使用 polyfill 或改寫 |
-| API Token 洩漏 | 安全風險 | 提醒用戶不要分享 token、支援 token 撤銷 |
+| OAuth token 洩漏 | 安全風險 | KV 設定 TTL、支援 token 撤銷 |
 | 雙 transport 維護成本 | 開發時間增加 | 共用核心邏輯、統一測試 |
+
+---
+
+## 附錄：需要在 Rails 新增的檔案
+
+```
+slima_rails/
+├── app/
+│   ├── controllers/
+│   │   └── oauth_controller.rb          # 🆕 OAuth endpoints
+│   ├── models/
+│   │   └── oauth_authorization_code.rb  # 🆕 Authorization code model
+│   └── views/
+│       └── oauth/
+│           └── authorize.html.erb       # 🆕 授權確認頁面
+├── config/
+│   └── routes.rb                        # 🔄 新增 OAuth routes
+├── db/
+│   └── migrate/
+│       └── xxx_create_oauth_authorization_codes.rb  # 🆕 Migration
+└── spec/
+    ├── controllers/
+    │   └── oauth_controller_spec.rb     # 🆕 Controller 測試
+    └── models/
+        └── oauth_authorization_code_spec.rb  # 🆕 Model 測試
+```
