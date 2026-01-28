@@ -15,6 +15,7 @@
  */
 
 import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
+import { WorkerEntrypoint } from 'cloudflare:workers';
 
 export interface Env {
   SLIMA_API_URL: string;
@@ -115,19 +116,19 @@ function getErrorHtml(message: string): string {
  * 2. Redirecting to Rails for user authentication
  * 3. Handling Rails callback and completing authorization
  */
-export default class SlimaOAuthHandler {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+export default class SlimaOAuthHandler extends WorkerEntrypoint<Env> {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const oauthProvider = env.OAUTH_PROVIDER;
+    const oauthProvider = this.env.OAUTH_PROVIDER;
 
     // Handle Rails callback (after user authorizes in Rails)
     if (url.pathname === '/callback') {
-      return this.handleCallback(request, env, oauthProvider);
+      return this.handleCallback(request, oauthProvider);
     }
 
     // Handle authorization request - redirect to Rails
     if (url.pathname === '/authorize') {
-      return this.handleAuthorize(request, env, oauthProvider);
+      return this.handleAuthorize(request, oauthProvider);
     }
 
     // Health check / info endpoint
@@ -154,7 +155,6 @@ export default class SlimaOAuthHandler {
    */
   private async handleAuthorize(
     request: Request,
-    env: Env,
     oauthProvider: OAuthHelpers
   ): Promise<Response> {
     // Parse the incoming OAuth request
@@ -169,7 +169,7 @@ export default class SlimaOAuthHandler {
 
     // Store the OAuth request info in KV for later retrieval
     const state = crypto.randomUUID();
-    await env.OAUTH_KV.put(
+    await this.env.OAUTH_KV.put(
       `oauth_request:${state}`,
       JSON.stringify({
         oauthReqInfo: {
@@ -185,8 +185,8 @@ export default class SlimaOAuthHandler {
     );
 
     // Build Rails authorize URL
-    const railsAuthUrl = new URL(`${env.SLIMA_API_URL}/api/v1/oauth/authorize`);
-    railsAuthUrl.searchParams.set('client_id', env.OAUTH_CLIENT_ID);
+    const railsAuthUrl = new URL(`${this.env.SLIMA_API_URL}/api/v1/oauth/authorize`);
+    railsAuthUrl.searchParams.set('client_id', this.env.OAUTH_CLIENT_ID);
     railsAuthUrl.searchParams.set('redirect_uri', `${new URL(request.url).origin}/callback`);
     railsAuthUrl.searchParams.set('state', state);
     railsAuthUrl.searchParams.set('response_type', 'code');
@@ -205,7 +205,6 @@ export default class SlimaOAuthHandler {
    */
   private async handleCallback(
     request: Request,
-    env: Env,
     oauthProvider: OAuthHelpers
   ): Promise<Response> {
     const url = new URL(request.url);
@@ -233,7 +232,7 @@ export default class SlimaOAuthHandler {
     }
 
     // Retrieve stored OAuth request info
-    const storedData = await env.OAUTH_KV.get(`oauth_request:${state}`);
+    const storedData = await this.env.OAUTH_KV.get(`oauth_request:${state}`);
     if (!storedData) {
       return new Response(getErrorHtml('Session expired. Please try again.'), {
         status: 400,
@@ -242,16 +241,16 @@ export default class SlimaOAuthHandler {
     }
 
     const { oauthReqInfo } = JSON.parse(storedData);
-    await env.OAUTH_KV.delete(`oauth_request:${state}`);
+    await this.env.OAUTH_KV.delete(`oauth_request:${state}`);
 
     // Exchange code for token with Rails
-    const tokenResponse = await fetch(`${env.SLIMA_API_URL}/api/v1/oauth/token`, {
+    const tokenResponse = await fetch(`${this.env.SLIMA_API_URL}/api/v1/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         grant_type: 'authorization_code',
         code,
-        client_id: env.OAUTH_CLIENT_ID,
+        client_id: this.env.OAUTH_CLIENT_ID,
         redirect_uri: `${url.origin}/callback`,
       }),
     });
