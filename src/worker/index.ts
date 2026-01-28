@@ -3,19 +3,16 @@
  *
  * Provides remote MCP access via Streamable HTTP transport
  * with OAuth 2.0 + PKCE authentication.
+ *
+ * Uses the official MCP SDK WebStandardStreamableHTTPServerTransport
+ * for proper protocol handling.
  */
 
 import { Hono, Context, Next } from 'hono';
 import { cors } from 'hono/cors';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SlimaApiClient, Logger } from '../core/api/client.js';
-import {
-  registerBookTools,
-  registerContentTools,
-  registerBetaReaderTools,
-  registerFileTools,
-} from '../core/tools/index.js';
 import { createOAuthRoutes, getTokenFromSession, Env } from './oauth.js';
+import { handleMcpRequest } from './mcp-handler.js';
+import type { Logger } from '../core/api/client.js';
 
 const VERSION = '0.1.0';
 
@@ -27,40 +24,31 @@ const workerLogger: Logger = {
   error: (message: string, error?: unknown) => console.error(`[ERROR] ${message}`, error),
 };
 
-// Create MCP server with tools
-function createMcpServer(getToken: () => Promise<string>, baseUrl: string): McpServer {
-  const client = new SlimaApiClient({
-    baseUrl,
-    getToken,
-    logger: workerLogger,
-  });
-
-  const server = new McpServer({
-    name: 'slima',
-    version: VERSION,
-  });
-
-  // Register all tools
-  registerBookTools(server, client);
-  registerContentTools(server, client);
-  registerBetaReaderTools(server, client, workerLogger);
-  registerFileTools(server, client);
-
-  return server;
-}
-
 // Authentication middleware for MCP endpoints
+// RFC 9728: Must return WWW-Authenticate header with resource_metadata URL
 async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
   const token = await getTokenFromSession(c);
   if (!token) {
-    return c.json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32001,
-        message: 'Authentication required. Please visit /auth/login to authenticate.',
-      },
-      id: null,
-    }, 401);
+    const baseUrl = new URL(c.req.url).origin;
+    // RFC 9728: Include resource_metadata in WWW-Authenticate header
+    // This tells the client where to discover OAuth endpoints
+    return new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Authentication required',
+        },
+        id: null,
+      }),
+      {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`,
+        },
+      }
+    );
   }
   // Store token in context for later use
   c.set('apiToken', token);
@@ -71,10 +59,10 @@ async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
 const app = new Hono<{ Bindings: Env; Variables: { apiToken: string } }>();
 
 // CORS for MCP endpoints
-app.use('/mcp/*', cors({
+app.use('/mcp', cors({
   origin: '*', // MCP clients may come from various origins
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id'],
+  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id', 'Mcp-Protocol-Version'],
   exposeHeaders: ['Mcp-Session-Id'],
   credentials: true,
 }));
@@ -100,97 +88,20 @@ app.get('/', (c) => {
   });
 });
 
-// MCP endpoint - Streamable HTTP transport
-app.post('/mcp', requireAuth, async (c) => {
+// MCP endpoint - using SDK's WebStandardStreamableHTTPServerTransport
+// Supports GET, POST, DELETE as per MCP Streamable HTTP spec
+app.all('/mcp', requireAuth, async (c) => {
   const token = c.get('apiToken');
 
-  try {
-    const body = await c.req.json();
-    const server = createMcpServer(
-      async () => token,
-      c.env.SLIMA_API_URL
-    );
-
-    // Handle the JSON-RPC request
-    // Note: This is a simplified implementation.
-    // In production, you'd use the MCP SDK's transport handler
-    // or Cloudflare's official MCP integration package.
-
-    const { method, params, id } = body;
-
-    // List available tools
-    if (method === 'tools/list') {
-      const tools = server.getTools?.() || [];
-      return c.json({
-        jsonrpc: '2.0',
-        result: { tools },
-        id,
-      });
-    }
-
-    // Call a tool
-    if (method === 'tools/call') {
-      const { name, arguments: args } = params;
-      try {
-        const result = await server.callTool?.(name, args);
-        return c.json({
-          jsonrpc: '2.0',
-          result,
-          id,
-        });
-      } catch (error) {
-        return c.json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32000,
-            message: error instanceof Error ? error.message : 'Tool execution failed',
-          },
-          id,
-        }, 500);
-      }
-    }
-
-    // Server info
-    if (method === 'initialize' || method === 'server/info') {
-      return c.json({
-        jsonrpc: '2.0',
-        result: {
-          serverInfo: {
-            name: 'slima',
-            version: VERSION,
-          },
-          capabilities: {
-            tools: {},
-          },
-        },
-        id,
-      });
-    }
-
-    // Unknown method
-    return c.json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32601,
-        message: `Method not found: ${method}`,
-      },
-      id,
-    }, 404);
-  } catch (error) {
-    workerLogger.error('MCP request error', error);
-    return c.json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32700,
-        message: 'Parse error',
-      },
-      id: null,
-    }, 400);
-  }
+  return handleMcpRequest(c.req.raw, {
+    apiUrl: c.env.SLIMA_API_URL,
+    getToken: async () => token,
+    logger: workerLogger,
+  });
 });
 
-// MCP info endpoint (for discovery)
-app.get('/mcp', (c) => {
+// MCP info endpoint (for discovery - no auth required)
+app.get('/mcp/info', (c) => {
   const baseUrl = new URL(c.req.url).origin;
   return c.json({
     name: 'slima',
