@@ -57,6 +57,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.2.2",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "hono": "^4.0.0",
     "zod": "^3.23.0"

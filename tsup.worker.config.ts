@@ -14,7 +14,9 @@ export default defineConfig({
   sourcemap: true,
   minify: true, // Reduce bundle size for Workers
   treeshake: true,
-  noExternal: [/.*/], // Bundle all dependencies for Workers
+  // Bundle all dependencies EXCEPT Cloudflare Workers built-ins
+  external: ['cloudflare:workers'],
+  noExternal: [/^(?!cloudflare:).*/], // Bundle everything except cloudflare: imports
   define: {
     __VERSION__: JSON.stringify(pkg.version),
   },

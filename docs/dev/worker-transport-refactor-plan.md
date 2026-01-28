@@ -515,6 +515,42 @@ describe('MCP Integration Tests', () => {
 - [MCP SDK WebStandardStreamableHTTPServerTransport](https://github.com/modelcontextprotocol/typescript-sdk)
 - [Cloudflare Remote MCP Server Guide](https://developers.cloudflare.com/agents/guides/remote-mcp-server/)
 - [MCP Transport Specification](https://spec.modelcontextprotocol.io/)
+- [createMcpHandler API](https://developers.cloudflare.com/agents/model-context-protocol/mcp-handler-api/)
+
+---
+
+## Cloudflare 最佳做法備註
+
+### 替代方案：`createMcpHandler`
+
+Cloudflare 提供 `createMcpHandler` 作為 stateless MCP server 的簡化方案：
+
+```typescript
+import { createMcpHandler } from 'agents/mcp';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+const server = new McpServer({ name: 'slima', version: '1.0.0' });
+// ... register tools ...
+
+export default {
+  fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
+    const handler = createMcpHandler(server, {
+      route: '/mcp',
+      enableJsonResponse: true,
+    });
+    return handler(request, env, ctx);
+  },
+};
+```
+
+### 當前選擇
+
+我們選擇直接使用 `WebStandardStreamableHTTPServerTransport`，因為：
+1. 更直接控制 transport 行為
+2. 與現有 Hono routing 整合良好
+3. 測試覆蓋完整
+
+未來可考慮遷移到 `createMcpHandler` 以獲得更好的 Cloudflare 整合。
 
 ---
 
@@ -524,3 +560,4 @@ describe('MCP Integration Tests', () => {
 |------|------|------|
 | 1.0 | 2026-01-29 | 初版 |
 | 1.1 | 2026-01-29 | 完成實作，所有測試通過 (142 tests) |
+| 1.2 | 2026-01-29 | 新增 Cloudflare 最佳做法備註 |

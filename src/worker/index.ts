@@ -4,17 +4,32 @@
  * Provides remote MCP access via Streamable HTTP transport
  * with OAuth 2.0 + PKCE authentication.
  *
- * Uses the official MCP SDK WebStandardStreamableHTTPServerTransport
- * for proper protocol handling.
+ * Uses:
+ * - @cloudflare/workers-oauth-provider for OAuth handling
+ * - @modelcontextprotocol/sdk for MCP protocol
  */
 
-import { Hono, Context, Next } from 'hono';
-import { cors } from 'hono/cors';
-import { createOAuthRoutes, getTokenFromSession, Env } from './oauth.js';
-import { handleMcpRequest } from './mcp-handler.js';
+import OAuthProvider from '@cloudflare/workers-oauth-provider';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { SlimaApiClient } from '../core/api/client.js';
+import {
+  registerBookTools,
+  registerContentTools,
+  registerBetaReaderTools,
+  registerFileTools,
+} from '../core/tools/index.js';
+import SlimaOAuthHandler from './oauth-handler.js';
 import type { Logger } from '../core/api/client.js';
 
 const VERSION = '0.1.0';
+
+export interface Env {
+  SLIMA_API_URL: string;
+  OAUTH_CLIENT_ID: string;
+  OAUTH_KV: KVNamespace;
+}
 
 // Simple logger for Worker environment
 const workerLogger: Logger = {
@@ -24,157 +39,102 @@ const workerLogger: Logger = {
   error: (message: string, error?: unknown) => console.error(`[ERROR] ${message}`, error),
 };
 
-// Authentication middleware for MCP endpoints
-// RFC 9728: Must return WWW-Authenticate header with resource_metadata URL
-async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
-  const token = await getTokenFromSession(c);
-  if (!token) {
-    const baseUrl = new URL(c.req.url).origin;
-    // RFC 9728: Include resource_metadata in WWW-Authenticate header
-    // This tells the client where to discover OAuth endpoints
-    return new Response(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        error: {
-          code: -32001,
-          message: 'Authentication required',
-        },
-        id: null,
-      }),
-      {
-        status: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`,
-        },
-      }
-    );
-  }
-  // Store token in context for later use
-  c.set('apiToken', token);
-  await next();
-}
+/**
+ * MCP API Handler
+ *
+ * Handles authenticated MCP requests. The accessToken from OAuth
+ * is available in this.ctx.props.accessToken
+ */
+class McpApiHandler extends WorkerEntrypoint<Env> {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
 
-// Create the Hono app
-const app = new Hono<{ Bindings: Env; Variables: { apiToken: string } }>();
+    // Only handle /mcp endpoint
+    if (!url.pathname.startsWith('/mcp')) {
+      return new Response('Not Found', { status: 404 });
+    }
 
-// CORS for MCP endpoints
-app.use('/mcp', cors({
-  origin: '*', // MCP clients may come from various origins
-  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id', 'Mcp-Protocol-Version'],
-  exposeHeaders: ['Mcp-Session-Id'],
-  credentials: true,
-}));
+    // Get the access token from OAuth context
+    // @ts-expect-error - ctx.props is set by workers-oauth-provider
+    const accessToken = this.ctx?.props?.accessToken;
 
-// CORS for OAuth and well-known endpoints
-app.use('/.well-known/*', cors({ origin: '*' }));
-app.use('/oauth/*', cors({ origin: '*' }));
+    if (!accessToken) {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32001, message: 'Authentication required' },
+          id: null,
+        }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"`,
+          },
+        }
+      );
+    }
 
-// OAuth routes
-createOAuthRoutes(app);
-
-// Health check
-app.get('/', (c) => {
-  return c.json({
-    name: 'Slima MCP Server',
-    version: VERSION,
-    status: 'ok',
-    endpoints: {
-      mcp: '/mcp',
-      auth: '/auth/login',
-      docs: 'https://docs.slima.ai/mcp',
-    },
-  });
-});
-
-// MCP endpoint - using SDK's WebStandardStreamableHTTPServerTransport
-// Supports GET, POST, DELETE as per MCP Streamable HTTP spec
-app.all('/mcp', requireAuth, async (c) => {
-  const token = c.get('apiToken');
-
-  return handleMcpRequest(c.req.raw, {
-    apiUrl: c.env.SLIMA_API_URL,
-    getToken: async () => token,
-    logger: workerLogger,
-  });
-});
-
-// MCP info endpoint (for discovery - no auth required)
-app.get('/mcp/info', (c) => {
-  const baseUrl = new URL(c.req.url).origin;
-  return c.json({
-    name: 'slima',
-    version: VERSION,
-    description: 'Slima MCP Server - AI writing assistant for long-form fiction',
-    capabilities: {
-      tools: true,
-    },
-    authentication: {
-      type: 'oauth2',
-      authorization_url: `${c.env.SLIMA_API_URL}/api/v1/oauth/authorize`,
-      token_url: `${c.env.SLIMA_API_URL}/api/v1/oauth/token`,
-      client_id: c.env.OAUTH_CLIENT_ID,
-      scope: 'read write',
-      pkce_required: true,
-    },
-  });
-});
-
-// OAuth 2.0 Authorization Server Metadata (RFC 8414)
-// Claude.ai and ChatGPT use this to discover OAuth endpoints
-app.get('/.well-known/oauth-authorization-server', (c) => {
-  const baseUrl = new URL(c.req.url).origin;
-  return c.json({
-    issuer: c.env.SLIMA_API_URL,
-    authorization_endpoint: `${c.env.SLIMA_API_URL}/api/v1/oauth/authorize`,
-    token_endpoint: `${c.env.SLIMA_API_URL}/api/v1/oauth/token`,
-    registration_endpoint: `${baseUrl}/oauth/register`,  // RFC 7591 DCR
-    response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
-    code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['none'],
-    scopes_supported: ['read', 'write'],
-  });
-});
-
-// RFC 9728 - OAuth 2.0 Protected Resource Metadata
-// ChatGPT queries this to discover the authorization server
-app.get('/.well-known/oauth-protected-resource', (c) => {
-  const baseUrl = new URL(c.req.url).origin;
-  return c.json({
-    resource: baseUrl,
-    authorization_servers: [c.env.SLIMA_API_URL],
-    scopes_supported: ['read', 'write'],
-    bearer_methods_supported: ['header'],
-  });
-});
-
-// RFC 7591 - Dynamic Client Registration
-// Proxies registration requests to Rails API
-app.post('/oauth/register', async (c) => {
-  try {
-    const body = await c.req.json();
-
-    // Forward to Rails DCR endpoint
-    const response = await fetch(`${c.env.SLIMA_API_URL}/api/v1/oauth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+    // Create API client with the authenticated token
+    const client = new SlimaApiClient({
+      baseUrl: this.env.SLIMA_API_URL,
+      getToken: async () => accessToken,
+      logger: workerLogger,
     });
 
-    const data = await response.json();
-    return c.json(data, response.status as 200 | 201 | 400);
-  } catch (error) {
-    workerLogger.error('DCR registration error', error);
-    return c.json({
-      error: 'server_error',
-      error_description: 'Failed to register client',
-    }, 500);
-  }
-});
+    // Create MCP server and register tools
+    const server = new McpServer({
+      name: 'slima',
+      version: VERSION,
+    });
 
-// Export for Cloudflare Workers
-export default app;
+    registerBookTools(server, client);
+    registerContentTools(server, client);
+    registerBetaReaderTools(server, client, workerLogger);
+    registerFileTools(server, client);
+
+    // Create transport in stateless mode with JSON responses
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // Stateless mode
+      enableJsonResponse: true, // Return JSON instead of SSE
+    });
+
+    // Connect and handle request
+    await server.connect(transport);
+
+    try {
+      return await transport.handleRequest(request);
+    } finally {
+      await transport.close();
+    }
+  }
+}
+
+// Export the OAuthProvider-wrapped Worker
+export default new OAuthProvider({
+  // API route - requests here require authentication
+  apiRoute: '/mcp',
+
+  // Handler for authenticated API requests
+  apiHandler: McpApiHandler,
+
+  // Default handler for non-API requests (authorization flow)
+  defaultHandler: SlimaOAuthHandler,
+
+  // OAuth endpoints - proxy to Rails
+  authorizeEndpoint: '/authorize',
+  tokenEndpoint: '/token',
+  clientRegistrationEndpoint: '/register',
+
+  // Supported scopes
+  scopesSupported: ['read', 'write'],
+
+  // Token settings
+  refreshTokenTTL: 30 * 24 * 60 * 60, // 30 days
+
+  // Error handler
+  onError({ code, description, status }) {
+    workerLogger.error(`OAuth error: ${status} ${code} - ${description}`);
+    return undefined; // Use default error response
+  },
+});

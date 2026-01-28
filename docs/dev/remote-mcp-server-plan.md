@@ -2,8 +2,33 @@
 
 > 讓 Claude.ai、ChatGPT 網頁版等平台可以透過 HTTP 連接 Slima MCP Server
 
-**版本**: v2.0 (2026-01-28 更新)
-**狀態**: Plan Reviewed - 已審查並改進
+**版本**: v3.0 (2026-01-29 更新)
+**狀態**: 最佳做法審查 - 依據 Cloudflare 官方建議更新
+
+---
+
+## 2026-01-29 更新：最佳做法審查
+
+### 參考資源
+
+- [Cloudflare Remote MCP Server Guide](https://developers.cloudflare.com/agents/guides/remote-mcp-server/)
+- [Cloudflare Authorization](https://developers.cloudflare.com/agents/model-context-protocol/authorization/)
+- [workers-oauth-provider](https://github.com/cloudflare/workers-oauth-provider)
+- [createMcpHandler API](https://developers.cloudflare.com/agents/model-context-protocol/mcp-handler-api/)
+
+### 現有實作 vs 最佳做法
+
+| 元件 | 現有做法 | Cloudflare 建議 | 狀態 |
+|------|----------|-----------------|------|
+| MCP Transport | `WebStandardStreamableHTTPServerTransport` | 同上 (或 `createMcpHandler`) | ✅ 符合 |
+| OAuth 處理 | 自訂 `oauth.ts` | `workers-oauth-provider` | ⚠️ 可優化 |
+| Token 儲存 | KV 手動存取 | `workers-oauth-provider` 自動加密 | ⚠️ 可優化 |
+| DCR | 手動 proxy | 內建支援 | ⚠️ 可優化 |
+| Well-Known | ✅ 已實作 | 同上 | ✅ 符合 |
+
+### 改進計畫
+
+詳見 `mcp-best-practices-plan.md`
 
 ---
 
