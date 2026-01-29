@@ -29,6 +29,7 @@ USAGE:
 COMMANDS:
   (none)    Start the MCP server
   auth      Authenticate with Slima (opens browser)
+  auth --force  Re-authenticate (switch account)
   logout    Remove saved credentials
   status    Show authentication status
   --help    Show this help message
@@ -43,6 +44,7 @@ AUTHENTICATION:
 
 EXAMPLES:
   slima-mcp auth              # Authenticate with browser
+  slima-mcp auth --force      # Re-authenticate (switch account)
   slima-mcp status            # Check auth status
   SLIMA_API_TOKEN=xxx slima-mcp   # Use env var
 
@@ -126,9 +128,11 @@ async function main(): Promise<void> {
   const command = args[0];
 
   switch (command) {
-    case 'auth':
-      await runAuth();
+    case 'auth': {
+      const forceFlag = args.includes('--force') || args.includes('-f');
+      await runAuth({ force: forceFlag });
       break;
+    }
 
     case 'logout':
       await runLogout();

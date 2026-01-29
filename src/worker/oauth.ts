@@ -3,16 +3,35 @@
  *
  * Implements OAuth 2.0 Authorization Code flow with PKCE
  * for secure authentication without client secrets.
+ *
+ * The Worker acts as an OAuth Authorization Server proxy:
+ * - Exposes standard OAuth endpoints at same domain (for AI client compatibility)
+ * - Internally delegates authentication to Rails API
+ * - Manages PKCE flow between client and Rails
  */
+
+/// <reference types="@cloudflare/workers-types" />
 
 import { Hono, Context } from 'hono';
 import { cors } from 'hono/cors';
+import type { OAuthRequestContext, AuthCodeData, OAuthError } from './types.js';
 
 export interface Env {
   SLIMA_API_URL: string;
   OAUTH_CLIENT_ID: string;
   OAUTH_KV: KVNamespace;
 }
+
+/** Hono app type with Env bindings (used across oauth routes) */
+export type OAuthApp = Hono<{ Bindings: Env }>;
+
+// Simple logger for Worker environment
+const logger = {
+  debug: (message: string, ...args: unknown[]) => console.debug(`[OAuth] ${message}`, ...args),
+  info: (message: string, ...args: unknown[]) => console.info(`[OAuth] ${message}`, ...args),
+  warn: (message: string, ...args: unknown[]) => console.warn(`[OAuth] ${message}`, ...args),
+  error: (message: string, error?: unknown) => console.error(`[OAuth] ${message}`, error),
+};
 
 // PKCE utility functions
 function generateCodeVerifier(): string {
@@ -37,6 +56,36 @@ function base64UrlEncode(buffer: Uint8Array): string {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
+}
+
+/**
+ * Validate PKCE code_verifier against code_challenge
+ * Uses S256 method: BASE64URL(SHA256(code_verifier)) == code_challenge
+ */
+async function validatePKCE(codeVerifier: string, codeChallenge: string): Promise<boolean> {
+  if (!codeVerifier || !codeChallenge) {
+    return false;
+  }
+  const expectedChallenge = await generateCodeChallenge(codeVerifier);
+  return expectedChallenge === codeChallenge;
+}
+
+/**
+ * Create OAuth error response (RFC 6749 format)
+ */
+function oauthErrorResponse(
+  error: string,
+  description: string,
+  status: number = 400
+): Response {
+  const body: OAuthError = {
+    error,
+    error_description: description,
+  };
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 // XSS prevention: escape HTML special characters
@@ -109,7 +158,7 @@ function pageTemplate(options: {
 </html>`;
 }
 
-export function createOAuthRoutes(app: Hono<{ Bindings: Env }>) {
+export function createOAuthRoutes(app: OAuthApp) {
   // CORS configuration for AI platforms
   app.use('/auth/*', cors({
     origin: ['https://claude.ai', 'https://chat.openai.com'],
@@ -130,6 +179,9 @@ export function createOAuthRoutes(app: Hono<{ Bindings: Env }>) {
       { expirationTtl: 600 } // 10 minutes
     );
 
+    // Check if force re-login is requested
+    const forceLogin = c.req.query('prompt') === 'login';
+
     const authUrl = new URL(`${c.env.SLIMA_API_URL}/api/v1/oauth/authorize`);
     authUrl.searchParams.set('client_id', c.env.OAUTH_CLIENT_ID);
     authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -137,28 +189,135 @@ export function createOAuthRoutes(app: Hono<{ Bindings: Env }>) {
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('code_challenge', codeChallenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
+    if (forceLogin) {
+      authUrl.searchParams.set('prompt', 'login');
+    }
 
     return c.redirect(authUrl.toString());
   });
 
-  // OAuth callback (with PKCE verification)
+  /**
+   * OAuth callback handler
+   *
+   * Handles two different flows:
+   * 1. /auth/login flow (browser-based): Sets cookie and shows success page
+   * 2. /authorize flow (AI client): Returns authorization code to client redirect_uri
+   *
+   * The flow is determined by which KV key exists:
+   * - oauth:{state} = /auth/login flow
+   * - oauth_req:{state} = /authorize flow (AI client)
+   */
   app.get('/callback', async (c) => {
     const code = c.req.query('code');
     const state = c.req.query('state');
     const error = c.req.query('error');
+    const errorDescription = c.req.query('error_description');
 
+    // Handle OAuth errors
     if (error) {
+      // Check if this is an AI client flow
+      const oauthReqData = await c.env.OAUTH_KV.get(`oauth_req:${state}`);
+      if (oauthReqData) {
+        // AI client flow - redirect back with error
+        const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
+        await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+
+        const callbackUrl = new URL(oauthReq.redirectUri);
+        callbackUrl.searchParams.set('error', error);
+        if (errorDescription) {
+          callbackUrl.searchParams.set('error_description', errorDescription);
+        }
+        callbackUrl.searchParams.set('state', oauthReq.originalState);
+        return c.redirect(callbackUrl.toString());
+      }
+
+      // Browser flow - show error page
       return c.html(pageTemplate({
         title: 'Authorization Denied',
         heading: 'Authorization Denied',
         message: error === 'access_denied'
           ? 'You denied access to your Slima account.'
-          : String(error),
+          : String(errorDescription || error),
         isSuccess: false,
       }), 400);
     }
 
-    // Validate state and get code_verifier
+    // Check which flow this is
+    const oauthReqData = await c.env.OAUTH_KV.get(`oauth_req:${state}`);
+
+    if (oauthReqData) {
+      // ================================================================
+      // AI Client Flow (/authorize -> /callback)
+      // Exchange code, generate Worker auth code, redirect to client
+      // ================================================================
+      const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
+      await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+
+      logger.info('AI client callback', { clientId: oauthReq.clientId });
+
+      // Exchange code with Rails
+      const baseUrl = new URL(c.req.url).origin;
+      const tokenResponse = await fetch(`${c.env.SLIMA_API_URL}/api/v1/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code,
+          client_id: c.env.OAUTH_CLIENT_ID,
+          redirect_uri: `${baseUrl}/callback`,
+          code_verifier: oauthReq.internalVerifier,
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        const errorData = await tokenResponse.json().catch(() => ({})) as { error?: string; error_description?: string };
+        logger.error('Token exchange failed', errorData);
+
+        const callbackUrl = new URL(oauthReq.redirectUri);
+        callbackUrl.searchParams.set('error', errorData.error || 'server_error');
+        callbackUrl.searchParams.set('error_description', errorData.error_description || 'Token exchange failed');
+        callbackUrl.searchParams.set('state', oauthReq.originalState);
+        return c.redirect(callbackUrl.toString());
+      }
+
+      const { access_token, expires_in } = await tokenResponse.json() as {
+        access_token: string;
+        expires_in: number;
+      };
+
+      // Generate Worker authorization code
+      const workerCode = crypto.randomUUID();
+      const authCodeData: AuthCodeData = {
+        accessToken: access_token,
+        clientId: oauthReq.clientId,
+        redirectUri: oauthReq.redirectUri,
+        codeChallenge: oauthReq.codeChallenge,
+        codeChallengeMethod: oauthReq.codeChallengeMethod,
+        resource: oauthReq.resource, // RFC 8707
+        expiresIn: expires_in,
+        createdAt: Date.now(),
+      };
+
+      await c.env.OAUTH_KV.put(
+        `auth_code:${workerCode}`,
+        JSON.stringify(authCodeData),
+        { expirationTtl: 600 } // 10 minutes
+      );
+
+      logger.info('Authorization code issued', { code: workerCode.slice(0, 8) });
+
+      // Redirect back to client with authorization code
+      const callbackUrl = new URL(oauthReq.redirectUri);
+      callbackUrl.searchParams.set('code', workerCode);
+      callbackUrl.searchParams.set('state', oauthReq.originalState);
+
+      return c.redirect(callbackUrl.toString());
+    }
+
+    // ================================================================
+    // Browser Flow (/auth/login -> /callback)
+    // Exchange code, set session cookie, show success page
+    // ================================================================
     const storedData = await c.env.OAUTH_KV.get(`oauth:${state}`);
     if (!storedData) {
       return c.html(pageTemplate({
@@ -242,6 +401,230 @@ export function createOAuthRoutes(app: Hono<{ Bindings: Env }>) {
     return c.json({
       authenticated: !!token,
     });
+  });
+
+  // ============================================================================
+  // OAuth 2.0 Authorization Server Proxy Endpoints
+  // These endpoints allow the Worker to act as an OAuth AS, while delegating
+  // actual authentication to the Rails API. This is required because AI clients
+  // (Claude.ai, ChatGPT) require all OAuth endpoints on the same domain.
+  // ============================================================================
+
+  // CORS for OAuth proxy endpoints
+  app.use('/authorize', cors({ origin: '*' }));
+  app.use('/token', cors({ origin: '*' }));
+  app.use('/register', cors({ origin: '*' }));
+
+  /**
+   * GET /authorize - OAuth 2.0 Authorization Endpoint (RFC 6749)
+   *
+   * AI clients redirect users here to start the OAuth flow.
+   * We store the client's OAuth context, generate internal PKCE credentials,
+   * and redirect to Rails for actual authentication.
+   */
+  app.get('/authorize', async (c) => {
+    const clientId = c.req.query('client_id');
+    const redirectUri = c.req.query('redirect_uri');
+    const responseType = c.req.query('response_type');
+    const state = c.req.query('state');
+    const codeChallenge = c.req.query('code_challenge');
+    const codeChallengeMethod = c.req.query('code_challenge_method') || 'S256';
+    const scope = c.req.query('scope') || 'read write';
+    const resource = c.req.query('resource'); // RFC 8707 Resource Indicator
+    const prompt = c.req.query('prompt'); // OAuth 2.0 prompt parameter (login, consent, none)
+
+    logger.info('Authorization request', { clientId, redirectUri, state: state?.slice(0, 8), resource, prompt });
+
+    // Validate required parameters
+    if (!clientId) {
+      return oauthErrorResponse('invalid_request', 'Missing client_id parameter');
+    }
+    if (!redirectUri) {
+      return oauthErrorResponse('invalid_request', 'Missing redirect_uri parameter');
+    }
+    if (responseType !== 'code') {
+      return oauthErrorResponse('unsupported_response_type', 'Only response_type=code is supported');
+    }
+    if (!state) {
+      return oauthErrorResponse('invalid_request', 'Missing state parameter');
+    }
+    if (!codeChallenge) {
+      return oauthErrorResponse('invalid_request', 'Missing code_challenge parameter (PKCE required)');
+    }
+    if (codeChallengeMethod !== 'S256') {
+      return oauthErrorResponse('invalid_request', 'Only S256 code_challenge_method is supported');
+    }
+
+    // Generate internal state and PKCE for Rails OAuth
+    const internalState = crypto.randomUUID();
+    const internalVerifier = generateCodeVerifier();
+    const internalChallenge = await generateCodeChallenge(internalVerifier);
+    const baseUrl = new URL(c.req.url).origin;
+
+    // Store OAuth request context
+    const oauthContext: OAuthRequestContext = {
+      clientId,
+      redirectUri,
+      originalState: state,
+      codeChallenge,
+      codeChallengeMethod,
+      scope,
+      resource, // RFC 8707
+      internalVerifier,
+      createdAt: Date.now(),
+    };
+
+    await c.env.OAUTH_KV.put(
+      `oauth_req:${internalState}`,
+      JSON.stringify(oauthContext),
+      { expirationTtl: 600 } // 10 minutes
+    );
+
+    logger.debug('Stored OAuth context', { internalState: internalState.slice(0, 8) });
+
+    // Redirect to Rails authorize endpoint
+    const railsAuthUrl = new URL(`${c.env.SLIMA_API_URL}/api/v1/oauth/authorize`);
+    railsAuthUrl.searchParams.set('client_id', c.env.OAUTH_CLIENT_ID);
+    railsAuthUrl.searchParams.set('redirect_uri', `${baseUrl}/callback`);
+    railsAuthUrl.searchParams.set('response_type', 'code');
+    railsAuthUrl.searchParams.set('state', internalState);
+    railsAuthUrl.searchParams.set('code_challenge', internalChallenge);
+    railsAuthUrl.searchParams.set('code_challenge_method', 'S256');
+    // Pass prompt parameter to force re-login if requested
+    if (prompt) {
+      railsAuthUrl.searchParams.set('prompt', prompt);
+    }
+
+    return c.redirect(railsAuthUrl.toString());
+  });
+
+  /**
+   * POST /token - OAuth 2.0 Token Endpoint (RFC 6749)
+   *
+   * AI clients exchange the authorization code for an access token.
+   * We validate PKCE and return the stored Rails token.
+   */
+  app.post('/token', async (c) => {
+    // Parse body (support both form-urlencoded and JSON)
+    let body: Record<string, string>;
+    const contentType = c.req.header('Content-Type') || '';
+
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      const formData = await c.req.parseBody();
+      body = Object.fromEntries(
+        Object.entries(formData).map(([k, v]) => [k, String(v)])
+      );
+    } else if (contentType.includes('application/json')) {
+      body = await c.req.json();
+    } else {
+      // Default to form parsing for compatibility
+      const formData = await c.req.parseBody();
+      body = Object.fromEntries(
+        Object.entries(formData).map(([k, v]) => [k, String(v)])
+      );
+    }
+
+    const grantType = body.grant_type;
+    const code = body.code;
+    const codeVerifier = body.code_verifier;
+    const clientId = body.client_id;
+    const redirectUri = body.redirect_uri;
+
+    logger.info('Token request', { grantType, clientId, hasCode: !!code });
+
+    // Validate grant_type
+    if (grantType !== 'authorization_code') {
+      return oauthErrorResponse('unsupported_grant_type', 'Only authorization_code grant is supported');
+    }
+
+    // Validate required parameters
+    if (!code) {
+      return oauthErrorResponse('invalid_request', 'Missing code parameter');
+    }
+    if (!codeVerifier) {
+      return oauthErrorResponse('invalid_request', 'Missing code_verifier parameter');
+    }
+
+    // Get auth code data from KV
+    const stored = await c.env.OAUTH_KV.get(`auth_code:${code}`);
+    if (!stored) {
+      logger.warn('Invalid or expired auth code', { code: code.slice(0, 8) });
+      return oauthErrorResponse('invalid_grant', 'Invalid or expired authorization code');
+    }
+
+    const authData: AuthCodeData = JSON.parse(stored);
+
+    // Delete the code immediately (one-time use)
+    await c.env.OAUTH_KV.delete(`auth_code:${code}`);
+
+    // Validate client_id
+    if (clientId && authData.clientId !== clientId) {
+      logger.warn('Client ID mismatch', { expected: authData.clientId, got: clientId });
+      return oauthErrorResponse('invalid_client', 'Client ID mismatch');
+    }
+
+    // Validate redirect_uri
+    if (redirectUri && authData.redirectUri !== redirectUri) {
+      logger.warn('Redirect URI mismatch');
+      return oauthErrorResponse('invalid_grant', 'Redirect URI mismatch');
+    }
+
+    // Validate PKCE
+    const pkceValid = await validatePKCE(codeVerifier, authData.codeChallenge);
+    if (!pkceValid) {
+      logger.warn('PKCE verification failed');
+      return oauthErrorResponse('invalid_grant', 'PKCE verification failed');
+    }
+
+    logger.info('Token issued successfully');
+
+    // Return the Rails token (RFC 8707: include resource if provided)
+    const tokenResponse: Record<string, unknown> = {
+      access_token: authData.accessToken,
+      token_type: 'Bearer',
+      expires_in: authData.expiresIn || 2592000, // 30 days default
+      scope: 'read write',
+    };
+
+    // RFC 8707: Echo back the resource indicator if it was provided
+    if (authData.resource) {
+      tokenResponse.resource = authData.resource;
+    }
+
+    return c.json(tokenResponse);
+  });
+
+  /**
+   * POST /register - Dynamic Client Registration (RFC 7591)
+   *
+   * AI clients register themselves to get client credentials.
+   * We proxy this to the Rails DCR endpoint.
+   */
+  app.post('/register', async (c) => {
+    try {
+      const body = await c.req.json();
+      logger.info('DCR registration request', { redirectUris: body.redirect_uris });
+
+      // Proxy to Rails DCR endpoint
+      const response = await fetch(`${c.env.SLIMA_API_URL}/api/v1/oauth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        logger.warn('DCR registration failed', { status: response.status });
+      } else {
+        logger.info('DCR registration successful');
+      }
+
+      return c.json(data, response.status as 200 | 201 | 400);
+    } catch (error) {
+      logger.error('DCR registration error', error);
+      return oauthErrorResponse('server_error', 'Failed to register client', 500);
+    }
   });
 }
 

@@ -10,7 +10,7 @@
 
 import { Hono, Context, Next } from 'hono';
 import { cors } from 'hono/cors';
-import { createOAuthRoutes, getTokenFromSession, Env } from './oauth.js';
+import { createOAuthRoutes, getTokenFromSession, Env, OAuthApp } from './oauth.js';
 import { handleMcpRequest } from './mcp-handler.js';
 import type { Logger } from '../core/api/client.js';
 
@@ -24,14 +24,21 @@ const workerLogger: Logger = {
   error: (message: string, error?: unknown) => console.error(`[ERROR] ${message}`, error),
 };
 
+// Create the Hono app (using OAuthApp type for compatibility with OAuth routes)
+const app: OAuthApp = new Hono<{ Bindings: Env }>();
+
+// Store for authenticated tokens (request-scoped)
+const tokenStore = new WeakMap<Request, string>();
+
 // Authentication middleware for MCP endpoints
 // RFC 9728: Must return WWW-Authenticate header with resource_metadata URL
+// RFC 6750: Should include scope parameter
 async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
   const token = await getTokenFromSession(c);
   if (!token) {
     const baseUrl = new URL(c.req.url).origin;
-    // RFC 9728: Include resource_metadata in WWW-Authenticate header
-    // This tells the client where to discover OAuth endpoints
+    // RFC 9728 + RFC 6750: Include resource_metadata and scope in WWW-Authenticate header
+    // This tells the client where to discover OAuth endpoints and required scopes
     return new Response(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -45,18 +52,15 @@ async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
         status: 401,
         headers: {
           'Content-Type': 'application/json',
-          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`,
+          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="read write"`,
         },
       }
     );
   }
-  // Store token in context for later use
-  c.set('apiToken', token);
+  // Store token using WeakMap keyed by request
+  tokenStore.set(c.req.raw, token);
   await next();
 }
-
-// Create the Hono app
-const app = new Hono<{ Bindings: Env; Variables: { apiToken: string } }>();
 
 // CORS for MCP endpoints
 app.use('/mcp', cors({
@@ -76,13 +80,18 @@ createOAuthRoutes(app);
 
 // Health check
 app.get('/', (c) => {
+  const baseUrl = new URL(c.req.url).origin;
   return c.json({
     name: 'Slima MCP Server',
     version: VERSION,
     status: 'ok',
     endpoints: {
       mcp: '/mcp',
+      authorize: '/authorize',
+      token: '/token',
+      register: '/register',
       auth: '/auth/login',
+      discovery: '/.well-known/oauth-authorization-server',
       docs: 'https://docs.slima.ai/mcp',
     },
   });
@@ -91,7 +100,11 @@ app.get('/', (c) => {
 // MCP endpoint - using SDK's WebStandardStreamableHTTPServerTransport
 // Supports GET, POST, DELETE as per MCP Streamable HTTP spec
 app.all('/mcp', requireAuth, async (c) => {
-  const token = c.get('apiToken');
+  const token = tokenStore.get(c.req.raw);
+  if (!token) {
+    // This should never happen since requireAuth already checked
+    return new Response('Unauthorized', { status: 401 });
+  }
 
   return handleMcpRequest(c.req.raw, {
     apiUrl: c.env.SLIMA_API_URL,
@@ -112,9 +125,9 @@ app.get('/mcp/info', (c) => {
     },
     authentication: {
       type: 'oauth2',
-      authorization_url: `${c.env.SLIMA_API_URL}/api/v1/oauth/authorize`,
-      token_url: `${c.env.SLIMA_API_URL}/api/v1/oauth/token`,
-      client_id: c.env.OAUTH_CLIENT_ID,
+      authorization_url: `${baseUrl}/authorize`,
+      token_url: `${baseUrl}/token`,
+      registration_url: `${baseUrl}/register`,
       scope: 'read write',
       pkce_required: true,
     },
@@ -123,57 +136,98 @@ app.get('/mcp/info', (c) => {
 
 // OAuth 2.0 Authorization Server Metadata (RFC 8414)
 // Claude.ai and ChatGPT use this to discover OAuth endpoints
+// IMPORTANT: All endpoints point to Worker (same domain) for AI client compatibility
 app.get('/.well-known/oauth-authorization-server', (c) => {
   const baseUrl = new URL(c.req.url).origin;
   return c.json({
-    issuer: c.env.SLIMA_API_URL,
-    authorization_endpoint: `${c.env.SLIMA_API_URL}/api/v1/oauth/authorize`,
-    token_endpoint: `${c.env.SLIMA_API_URL}/api/v1/oauth/token`,
-    registration_endpoint: `${baseUrl}/oauth/register`,  // RFC 7591 DCR
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/authorize`,
+    token_endpoint: `${baseUrl}/token`,
+    registration_endpoint: `${baseUrl}/register`,
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['none'],
+    token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
+    scopes_supported: ['read', 'write'],
+  });
+});
+
+// RFC 8414 - Authorization Server Metadata with path suffix
+// ChatGPT queries /.well-known/oauth-authorization-server/mcp for the /mcp resource
+app.get('/.well-known/oauth-authorization-server/:path', (c) => {
+  const baseUrl = new URL(c.req.url).origin;
+  return c.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/authorize`,
+    token_endpoint: `${baseUrl}/token`,
+    registration_endpoint: `${baseUrl}/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['read', 'write'],
   });
 });
 
 // RFC 9728 - OAuth 2.0 Protected Resource Metadata
 // ChatGPT queries this to discover the authorization server
+// IMPORTANT: authorization_servers points to self (Worker acts as OAuth AS proxy)
 app.get('/.well-known/oauth-protected-resource', (c) => {
   const baseUrl = new URL(c.req.url).origin;
   return c.json({
     resource: baseUrl,
-    authorization_servers: [c.env.SLIMA_API_URL],
+    authorization_servers: [baseUrl],
     scopes_supported: ['read', 'write'],
     bearer_methods_supported: ['header'],
   });
 });
 
-// RFC 7591 - Dynamic Client Registration
-// Proxies registration requests to Rails API
-app.post('/oauth/register', async (c) => {
-  try {
-    const body = await c.req.json();
+// RFC 9728 - Protected Resource Metadata with path suffix
+// Claude.ai queries /.well-known/oauth-protected-resource/mcp for the /mcp resource
+app.get('/.well-known/oauth-protected-resource/:path', (c) => {
+  const baseUrl = new URL(c.req.url).origin;
+  const resourcePath = c.req.param('path');
+  return c.json({
+    resource: `${baseUrl}/${resourcePath}`,
+    authorization_servers: [baseUrl],
+    scopes_supported: ['read', 'write'],
+    bearer_methods_supported: ['header'],
+  });
+});
 
-    // Forward to Rails DCR endpoint
-    const response = await fetch(`${c.env.SLIMA_API_URL}/api/v1/oauth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+// OpenID Connect Discovery (for Claude.ai compatibility)
+// Some clients query this endpoint instead of oauth-authorization-server
+app.get('/.well-known/openid-configuration', (c) => {
+  const baseUrl = new URL(c.req.url).origin;
+  return c.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/authorize`,
+    token_endpoint: `${baseUrl}/token`,
+    registration_endpoint: `${baseUrl}/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
+    scopes_supported: ['read', 'write', 'openid'],
+    subject_types_supported: ['public'],
+  });
+});
 
-    const data = await response.json();
-    return c.json(data, response.status as 200 | 201 | 400);
-  } catch (error) {
-    workerLogger.error('DCR registration error', error);
-    return c.json({
-      error: 'server_error',
-      error_description: 'Failed to register client',
-    }, 500);
-  }
+// OpenID Connect Discovery with path suffix
+app.get('/.well-known/openid-configuration/:path', (c) => {
+  const baseUrl = new URL(c.req.url).origin;
+  return c.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/authorize`,
+    token_endpoint: `${baseUrl}/token`,
+    registration_endpoint: `${baseUrl}/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
+    scopes_supported: ['read', 'write', 'openid'],
+    subject_types_supported: ['public'],
+  });
 });
 
 // Export for Cloudflare Workers

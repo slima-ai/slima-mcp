@@ -329,19 +329,28 @@ function getErrorHtml(message: string): string {
 
 /**
  * 執行認證流程
+ * @param options.baseUrl - API base URL (default: https://api.slima.ai)
+ * @param options.force - Force re-authentication even if already authenticated
  */
-export async function runAuth(options: { baseUrl?: string } = {}): Promise<void> {
+export async function runAuth(options: { baseUrl?: string; force?: boolean } = {}): Promise<void> {
   const baseUrl = options.baseUrl || process.env.SLIMA_API_URL || DEFAULT_API_URL;
+  const forceAuth = options.force || false;
 
   console.log('\n🔐 Slima MCP Authentication\n');
 
   // 檢查是否已經認證
   const existingCredentials = await loadToken();
-  if (existingCredentials) {
+  if (existingCredentials && !forceAuth) {
     console.log('You are already authenticated.');
     console.log(`Token stored at: ${getCredentialsFilePath()}`);
-    console.log('\nTo re-authenticate, first run: slima-mcp logout\n');
+    console.log('\nTo re-authenticate with a different account, run: slima-mcp auth --force\n');
     return;
+  }
+
+  // 如果強制認證，先刪除舊 token
+  if (existingCredentials && forceAuth) {
+    await deleteToken();
+    console.log('Clearing existing credentials for re-authentication...\n');
   }
 
   const state = generateState();
@@ -405,7 +414,9 @@ export async function runAuth(options: { baseUrl?: string } = {}): Promise<void>
   });
 
   // 建立認證 URL（使用 API endpoint）
-  const authUrl = `${baseUrl}/api/v1/auth/cli?state=${state}&callback_port=${port}`;
+  // 加入 prompt=login 強制重新登入（清除 Rails session）
+  const promptParam = forceAuth ? '&prompt=login' : '';
+  const authUrl = `${baseUrl}/api/v1/auth/cli?state=${state}&callback_port=${port}${promptParam}`;
 
   console.log('\nOpening browser for authentication...');
   await openBrowser(authUrl);

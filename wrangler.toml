@@ -5,6 +5,11 @@ name = "slima-mcp"
 main = "dist/worker/index.js"
 compatibility_date = "2025-01-01"
 
+# Custom domain (requires slima.ai zone in Cloudflare)
+routes = [
+  { pattern = "mcp.slima.ai", custom_domain = true }
+]
+
 # Build configuration
 [build]
 command = "npm run build:worker"
