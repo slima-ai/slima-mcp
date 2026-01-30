@@ -21,16 +21,51 @@ export interface FileSnapshot {
 
 /**
  * Flat file snapshot with parentToken (from API)
+ * Supports both camelCase and snake_case (API may return either)
  */
 export interface FlatFileSnapshot {
   token: string;
   name: string;
   kind: 'file' | 'folder' | string;
   position: number;
+  // camelCase
   blobHash?: string;
   wordCount?: number;
   isManuscript?: boolean;
   parentToken?: string;
+  // snake_case (Rails API)
+  blob_hash?: string;
+  word_count?: number;
+  is_manuscript?: boolean;
+  parent_token?: string;
+}
+
+/**
+ * Get parent token from file (supports both camelCase and snake_case)
+ */
+function getParentToken(file: FlatFileSnapshot): string | undefined {
+  return file.parentToken || file.parent_token;
+}
+
+/**
+ * Get word count from file (supports both camelCase and snake_case)
+ */
+function getWordCount(file: FlatFileSnapshot): number | undefined {
+  return file.wordCount ?? file.word_count;
+}
+
+/**
+ * Get isManuscript from file (supports both camelCase and snake_case)
+ */
+function getIsManuscript(file: FlatFileSnapshot): boolean | undefined {
+  return file.isManuscript ?? file.is_manuscript;
+}
+
+/**
+ * Get blobHash from file (supports both camelCase and snake_case)
+ */
+function getBlobHash(file: FlatFileSnapshot): string | undefined {
+  return file.blobHash || file.blob_hash;
 }
 
 /**
@@ -54,9 +89,9 @@ export function buildFileTree(flatFiles: FlatFileSnapshot[]): FileSnapshot[] {
       name: file.name,
       kind: file.kind,
       position: file.position,
-      blobHash: file.blobHash,
-      wordCount: file.wordCount,
-      isManuscript: file.isManuscript,
+      blobHash: getBlobHash(file),
+      wordCount: getWordCount(file),
+      isManuscript: getIsManuscript(file),
       children: [],
     });
   }
@@ -66,10 +101,11 @@ export function buildFileTree(flatFiles: FlatFileSnapshot[]): FileSnapshot[] {
 
   for (const file of flatFiles) {
     const node = fileMap.get(file.token)!;
+    const parentToken = getParentToken(file);
 
-    if (file.parentToken) {
+    if (parentToken) {
       // Has parent - add to parent's children
-      const parent = fileMap.get(file.parentToken);
+      const parent = fileMap.get(parentToken);
       if (parent) {
         parent.children = parent.children || [];
         parent.children.push(node);

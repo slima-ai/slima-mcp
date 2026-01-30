@@ -167,6 +167,41 @@ describe('File Tree Utilities', () => {
         expect(result[0].children![0].children![0].name).toBe('level3');
         expect(result[0].children![0].children![0].children![0].name).toBe('deep.md');
       });
+
+      it('should support snake_case fields from Rails API', () => {
+        // Given: Rails API returns snake_case fields
+        const flatFiles: FlatFileSnapshot[] = [
+          {
+            token: 'folder_1',
+            name: '研究資料',
+            kind: 'folder',
+            position: 0,
+            parent_token: undefined,
+          },
+          {
+            token: 'file_1',
+            name: '大綱.md',
+            kind: 'file',
+            position: 0,
+            word_count: 100,
+            blob_hash: 'sha256:abc',
+            is_manuscript: true,
+            parent_token: 'folder_1',
+          },
+        ];
+
+        // When
+        const result = buildFileTree(flatFiles);
+
+        // Then: Should correctly parse snake_case fields
+        expect(result).toHaveLength(1);
+        expect(result[0].name).toBe('研究資料');
+        expect(result[0].children).toHaveLength(1);
+        expect(result[0].children![0].name).toBe('大綱.md');
+        expect(result[0].children![0].wordCount).toBe(100);
+        expect(result[0].children![0].blobHash).toBe('sha256:abc');
+        expect(result[0].children![0].isManuscript).toBe(true);
+      });
     });
   });
 
