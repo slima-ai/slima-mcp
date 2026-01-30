@@ -145,20 +145,15 @@ describe('Book Tools Handlers', () => {
 
   describe('get_book_structure handler', () => {
     it('should return formatted file tree', async () => {
+      // Mock uses flat parentToken structure (as returned by API)
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
           token: 'cmt_latest',
           filesSnapshot: [
-            { name: 'chapter-01.md', kind: 'file', wordCount: 1000, position: 0 },
-            { name: 'chapter-02.md', kind: 'file', wordCount: 1500, position: 1 },
-            {
-              name: 'notes',
-              kind: 'folder',
-              position: 2,
-              children: [
-                { name: 'characters.md', kind: 'file', wordCount: 500, position: 0 },
-              ],
-            },
+            { token: 'f1', name: 'chapter-01.md', kind: 'file', wordCount: 1000, position: 0 },
+            { token: 'f2', name: 'chapter-02.md', kind: 'file', wordCount: 1500, position: 1 },
+            { token: 'f3', name: 'notes', kind: 'folder', position: 2 },
+            { token: 'f4', name: 'characters.md', kind: 'file', wordCount: 500, position: 0, parentToken: 'f3' },
           ],
         },
       ]);
@@ -185,11 +180,12 @@ describe('Book Tools Handlers', () => {
     });
 
     it('should show manuscript marker', async () => {
+      // Mock uses flat parentToken structure (as returned by API)
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
           token: 'cmt_latest',
           filesSnapshot: [
-            { name: 'chapter-01.md', kind: 'file', wordCount: 1000, position: 0, isManuscript: true },
+            { token: 'f1', name: 'chapter-01.md', kind: 'file', wordCount: 1000, position: 0, isManuscript: true },
           ],
         },
       ]);

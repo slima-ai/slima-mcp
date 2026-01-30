@@ -6,7 +6,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
 import { formatErrorForMcp } from '../utils/errors.js';
-import type { FileSnapshot } from '../api/types.js';
+import { buildFileTree, formatFileTree } from '../utils/file-tree.js';
+import type { FlatFileSnapshot } from '../utils/file-tree.js';
 
 /**
  * Register book-related tools
@@ -149,8 +150,10 @@ export function registerBookTools(
           };
         }
 
-        const snapshot = commits[0].filesSnapshot;
-        const tree = formatFileTree(snapshot);
+        // API returns flat structure with parentToken, convert to nested for display
+        const flatSnapshot = commits[0].filesSnapshot as unknown as FlatFileSnapshot[];
+        const nestedTree = buildFileTree(flatSnapshot);
+        const tree = formatFileTree(nestedTree);
 
         return {
           content: [
@@ -216,26 +219,4 @@ export function registerBookTools(
       }
     }
   );
-}
-
-/**
- * Format file tree
- */
-function formatFileTree(files: FileSnapshot[], indent = 0): string {
-  return files
-    .sort((a, b) => a.position - b.position)
-    .map((f) => {
-      const prefix = '  '.repeat(indent);
-      const icon = f.kind === 'folder' ? '📁' : '📄';
-      const words = f.kind === 'file' && f.wordCount ? ` (${f.wordCount} words)` : '';
-      const manuscript = f.isManuscript ? ' [M]' : '';
-      let line = `${prefix}${icon} ${f.name}${words}${manuscript}`;
-
-      if (f.children && f.children.length > 0) {
-        line += '\n' + formatFileTree(f.children, indent + 1);
-      }
-
-      return line;
-    })
-    .join('\n');
 }
