@@ -305,5 +305,90 @@ describe('File Tree Utilities', () => {
       expect(lines.some(l => l.match(/^\s+\s+📄 章節1\.md/))).toBe(true);
       expect(lines.some(l => l.match(/^\s+\s+📄 引言\.md/))).toBe(true);
     });
+
+    it('should work with exact Rails API response format (camelCase with UUID tokens)', () => {
+      // Given: Exact format from Rails API (after deep_camelize_keys)
+      const apiResponse: FlatFileSnapshot[] = [
+        // Folders
+        {
+          kind: 'folder',
+          name: '紀元時間線',
+          token: 'eb860d17-f71f-4a16-b0ab-39755c8981d0',
+          position: 0,
+        },
+        {
+          kind: 'folder',
+          name: '研究資料',
+          token: 'c5b05f85-7b56-4025-a6b5-c51593f984de',
+          position: 1,
+        },
+        {
+          kind: 'folder',
+          name: '鬥羅大陸',
+          token: '0c14ed26-1234-5678-9abc-def012345678',
+          position: 0,
+          parentToken: 'c5b05f85-7b56-4025-a6b5-c51593f984de', // child of 研究資料
+        },
+        // Files
+        {
+          kind: 'file',
+          name: '第一紀元：創世與諸神黃昏.md',
+          token: '039a3329-ed0a-4f2e-819d-75bddf364f3a',
+          position: 0,
+          blobHash: 'e81dac50683bd3056b657bdc8b7ae6206231e27ccc668b18c66e1b99802ce76b',
+          wordCount: 2266,
+          parentToken: 'eb860d17-f71f-4a16-b0ab-39755c8981d0', // child of 紀元時間線
+        },
+        {
+          kind: 'file',
+          name: '大綱.md',
+          token: '85892eb9-1111-2222-3333-444455556666',
+          position: 0,
+          wordCount: 100,
+          parentToken: '0c14ed26-1234-5678-9abc-def012345678', // child of 鬥羅大陸
+        },
+        {
+          kind: 'file',
+          name: '章節1.md',
+          token: '12345678-aaaa-bbbb-cccc-ddddeeeefffff',
+          position: 1,
+          wordCount: 500,
+          parentToken: '0c14ed26-1234-5678-9abc-def012345678', // child of 鬥羅大陸
+        },
+      ];
+
+      // When
+      const tree = buildFileTree(apiResponse);
+      const formatted = formatFileTree(tree);
+
+      // Then: Verify tree structure
+      expect(tree).toHaveLength(2); // 2 root folders
+      expect(tree[0].name).toBe('紀元時間線');
+      expect(tree[1].name).toBe('研究資料');
+
+      // 紀元時間線 has 1 child (第一紀元...)
+      expect(tree[0].children).toHaveLength(1);
+      expect(tree[0].children![0].name).toBe('第一紀元：創世與諸神黃昏.md');
+
+      // 研究資料 has 1 child (鬥羅大陸)
+      expect(tree[1].children).toHaveLength(1);
+      expect(tree[1].children![0].name).toBe('鬥羅大陸');
+
+      // 鬥羅大陸 has 2 children (大綱.md, 章節1.md)
+      expect(tree[1].children![0].children).toHaveLength(2);
+      expect(tree[1].children![0].children![0].name).toBe('大綱.md');
+      expect(tree[1].children![0].children![1].name).toBe('章節1.md');
+
+      // Verify formatted output shows nesting
+      const lines = formatted.split('\n');
+
+      // Check indentation levels
+      expect(lines.find(l => l === '📁 紀元時間線')).toBeDefined();
+      expect(lines.find(l => l === '📁 研究資料')).toBeDefined();
+      expect(lines.find(l => l === '  📄 第一紀元：創世與諸神黃昏.md (2266 words)')).toBeDefined();
+      expect(lines.find(l => l === '  📁 鬥羅大陸')).toBeDefined();
+      expect(lines.find(l => l === '    📄 大綱.md (100 words)')).toBeDefined();
+      expect(lines.find(l => l === '    📄 章節1.md (500 words)')).toBeDefined();
+    });
   });
 });
