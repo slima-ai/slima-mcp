@@ -37,7 +37,7 @@ export interface OAuthRequestContext {
  * Key format: auth_code:{workerCode}
  */
 export interface AuthCodeData {
-  /** Rails access token (slima_xxx format) */
+  /** Rails access token (may be slima_xxx format or OAuth token) */
   accessToken: string;
   /** Client ID for validation */
   clientId: string;

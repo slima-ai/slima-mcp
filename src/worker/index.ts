@@ -34,11 +34,17 @@ const tokenStore = new WeakMap<Request, string>();
 // RFC 9728: Must return WWW-Authenticate header with resource_metadata URL
 // RFC 6750: Should include scope parameter
 async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
+  const authHeader = c.req.header('Authorization');
+  workerLogger.debug(`requireAuth: method=${c.req.method} path=${c.req.path} hasAuth=${!!authHeader} authPrefix=${authHeader?.slice(0, 20)}`);
+
   const token = await getTokenFromSession(c);
   if (!token) {
     const baseUrl = new URL(c.req.url).origin;
+    workerLogger.info(`requireAuth: 401 - no valid token found, returning WWW-Authenticate`);
     // RFC 9728 + RFC 6750: Include resource_metadata and scope in WWW-Authenticate header
     // This tells the client where to discover OAuth endpoints and required scopes
+    // Note: resource_metadata points to the base URL (without /mcp suffix)
+    // per RFC 9728 Section 5.1 - clients construct the full path themselves
     return new Response(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -52,11 +58,13 @@ async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
         status: 401,
         headers: {
           'Content-Type': 'application/json',
-          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="read write"`,
+          // Use the resource-specific metadata URL for the /mcp endpoint
+          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`,
         },
       }
     );
   }
+  workerLogger.debug(`requireAuth: token resolved, prefix=${token.slice(0, 10)}...`);
   // Store token using WeakMap keyed by request
   tokenStore.set(c.req.raw, token);
   await next();
@@ -139,6 +147,7 @@ app.get('/mcp/info', (c) => {
 // IMPORTANT: All endpoints point to Worker (same domain) for AI client compatibility
 app.get('/.well-known/oauth-authorization-server', (c) => {
   const baseUrl = new URL(c.req.url).origin;
+  workerLogger.info(`well-known/oauth-authorization-server requested from ${c.req.header('User-Agent')?.slice(0, 50)}`);
   return c.json({
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/authorize`,
@@ -156,6 +165,8 @@ app.get('/.well-known/oauth-authorization-server', (c) => {
 // ChatGPT queries /.well-known/oauth-authorization-server/mcp for the /mcp resource
 app.get('/.well-known/oauth-authorization-server/:path', (c) => {
   const baseUrl = new URL(c.req.url).origin;
+  const path = c.req.param('path');
+  workerLogger.info(`well-known/oauth-authorization-server/${path} requested`);
   return c.json({
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/authorize`,
@@ -174,6 +185,7 @@ app.get('/.well-known/oauth-authorization-server/:path', (c) => {
 // IMPORTANT: authorization_servers points to self (Worker acts as OAuth AS proxy)
 app.get('/.well-known/oauth-protected-resource', (c) => {
   const baseUrl = new URL(c.req.url).origin;
+  workerLogger.info(`well-known/oauth-protected-resource requested from ${c.req.header('User-Agent')?.slice(0, 50)}`);
   return c.json({
     resource: baseUrl,
     authorization_servers: [baseUrl],
@@ -187,6 +199,7 @@ app.get('/.well-known/oauth-protected-resource', (c) => {
 app.get('/.well-known/oauth-protected-resource/:path', (c) => {
   const baseUrl = new URL(c.req.url).origin;
   const resourcePath = c.req.param('path');
+  workerLogger.info(`well-known/oauth-protected-resource/${resourcePath} requested`);
   return c.json({
     resource: `${baseUrl}/${resourcePath}`,
     authorization_servers: [baseUrl],

@@ -253,7 +253,11 @@ export function createOAuthRoutes(app: OAuthApp) {
       const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
       await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
 
-      logger.info('AI client callback', { clientId: oauthReq.clientId });
+      logger.info('AI client callback', {
+        clientId: oauthReq.clientId,
+        redirectUri: oauthReq.redirectUri,
+        hasCodeChallenge: !!oauthReq.codeChallenge,
+      });
 
       // Exchange code with Rails
       const baseUrl = new URL(c.req.url).origin;
@@ -433,7 +437,17 @@ export function createOAuthRoutes(app: OAuthApp) {
     const resource = c.req.query('resource'); // RFC 8707 Resource Indicator
     const prompt = c.req.query('prompt'); // OAuth 2.0 prompt parameter (login, consent, none)
 
-    logger.info('Authorization request', { clientId, redirectUri, state: state?.slice(0, 8), resource, prompt });
+    logger.info('Authorization request', {
+      clientId,
+      redirectUri,
+      state: state?.slice(0, 8),
+      resource,
+      prompt,
+      responseType,
+      codeChallengeMethod,
+      hasCodeChallenge: !!codeChallenge,
+      scope,
+    });
 
     // Validate required parameters
     if (!clientId) {
@@ -530,7 +544,7 @@ export function createOAuthRoutes(app: OAuthApp) {
     const clientId = body.client_id;
     const redirectUri = body.redirect_uri;
 
-    logger.info('Token request', { grantType, clientId, hasCode: !!code });
+    logger.info('Token request', { grantType, clientId, hasCode: !!code, hasVerifier: !!codeVerifier, redirectUri });
 
     // Validate grant_type
     if (grantType !== 'authorization_code') {
@@ -576,7 +590,11 @@ export function createOAuthRoutes(app: OAuthApp) {
       return oauthErrorResponse('invalid_grant', 'PKCE verification failed');
     }
 
-    logger.info('Token issued successfully');
+    logger.info('Token issued successfully', {
+      tokenPrefix: authData.accessToken?.slice(0, 10),
+      expiresIn: authData.expiresIn,
+      hasResource: !!authData.resource,
+    });
 
     // Return the Rails token (RFC 8707: include resource if provided)
     const tokenResponse: Record<string, unknown> = {
@@ -603,7 +621,13 @@ export function createOAuthRoutes(app: OAuthApp) {
   app.post('/register', async (c) => {
     try {
       const body = await c.req.json();
-      logger.info('DCR registration request', { redirectUris: body.redirect_uris });
+      logger.info('DCR registration request', {
+        clientName: body.client_name,
+        redirectUris: body.redirect_uris,
+        grantTypes: body.grant_types,
+        responseTypes: body.response_types,
+        tokenEndpointAuthMethod: body.token_endpoint_auth_method,
+      });
 
       // Proxy to Rails DCR endpoint
       const response = await fetch(`${c.env.SLIMA_API_URL}/api/v1/oauth/register`, {
@@ -615,9 +639,9 @@ export function createOAuthRoutes(app: OAuthApp) {
       const data = await response.json();
 
       if (!response.ok) {
-        logger.warn('DCR registration failed', { status: response.status });
+        logger.warn('DCR registration failed', { status: response.status, data });
       } else {
-        logger.info('DCR registration successful');
+        logger.info('DCR registration successful', { clientId: (data as { client_id?: string }).client_id });
       }
 
       return c.json(data, response.status as 200 | 201 | 400);
@@ -630,15 +654,24 @@ export function createOAuthRoutes(app: OAuthApp) {
 
 // Get token from session or Authorization header (middleware helper)
 // Supports:
-// 1. Bearer token (Claude.ai, ChatGPT style): Authorization: Bearer slima_xxx
+// 1. Bearer token (Claude.ai, ChatGPT style): Authorization: Bearer <token>
+//    - Slima API tokens (slima_xxx) are used directly
+//    - OAuth access tokens are looked up in KV to get the actual API token
 // 2. Cookie session (browser style): slima_session=uuid
 export async function getTokenFromSession(c: Context<{ Bindings: Env }>): Promise<string | null> {
   // First, check Authorization header (for MCP clients like Claude.ai)
   const authHeader = c.req.header('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7); // Remove 'Bearer ' prefix
-    // If it's a Slima API token, return it directly
-    if (token.startsWith('slima_')) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      // Slima API tokens can be used directly
+      if (token.startsWith('slima_')) {
+        return token;
+      }
+      // OAuth access tokens: the token IS the Rails API token
+      // (returned by our /token endpoint after OAuth flow)
+      // Let Rails API validate it - don't filter by prefix here
+      logger.debug('Bearer token received (non-slima_ prefix)', { tokenPrefix: token.slice(0, 8) });
       return token;
     }
   }

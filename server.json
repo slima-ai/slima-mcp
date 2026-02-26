@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.slima-ai/slima",
+  "description": "MCP Server for Slima - AI Writing IDE for Novel Authors. Manage books, chapters, characters, and get AI Beta Reader feedback.",
+  "repository": {
+    "url": "https://github.com/slima-ai/slima-mcp",
+    "source": "github"
+  },
+  "version": "0.1.10",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "slima-mcp",
+      "version": "0.1.10",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SLIMA_API_TOKEN",
+          "description": "Your Slima API token (starts with slima_). Get it from https://app.slima.ai/settings",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.slima.ai/mcp"
+    }
+  ]
+}
