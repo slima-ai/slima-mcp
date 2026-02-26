@@ -21,8 +21,8 @@ export class AuthenticationError extends SlimaApiError {
 }
 
 export class NotFoundError extends SlimaApiError {
-  constructor(resource = 'Resource') {
-    super(404, 'NOT_FOUND', `${resource} not found`);
+  constructor(message?: string) {
+    super(404, 'NOT_FOUND', message || 'Resource not found');
     this.name = 'NotFoundError';
   }
 }
@@ -40,8 +40,6 @@ export class InsufficientCreditsError extends SlimaApiError {
 export function formatErrorForMcp(error: unknown): string {
   if (error instanceof SlimaApiError) {
     switch (error.code) {
-      case 'NOT_FOUND':
-        return 'Resource not found. Please check the token.';
       case 'UNAUTHORIZED':
         return 'Invalid API token. Please check your configuration.';
       case 'INSUFFICIENT_CREDITS':
@@ -51,7 +49,7 @@ export function formatErrorForMcp(error: unknown): string {
       case 'TOKEN_REVOKED':
         return 'API token has been revoked. Please generate a new one.';
       default:
-        return error.message;
+        return `Error: ${error.message}`;
     }
   }
 

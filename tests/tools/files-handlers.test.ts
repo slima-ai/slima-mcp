@@ -283,6 +283,22 @@ describe('File Tools Handlers', () => {
 
       expect(result).toHaveProperty('isError', true);
     });
+
+    it('should pass through parent folder not found error message from API', async () => {
+      (mockClient.createFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new NotFoundError('Parent folder not found: meta')
+      );
+
+      const handler = handlers.get('create_file')!;
+      const result = await handler({
+        book_token: 'bk_test',
+        path: 'meta/overview.md',
+      });
+
+      expect(result).toHaveProperty('isError', true);
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('Parent folder not found: meta');
+    });
   });
 
   describe('delete_file handler', () => {
