@@ -55,18 +55,27 @@ export async function handleMcpRequest(
   registerFileTools(server, client);
 
   // Create transport in stateless mode (appropriate for Workers)
-  // enableJsonResponse: true makes responses simpler for testing and stateless operation
+  // enableJsonResponse: true is spec-compliant - both JSON and SSE are valid per MCP spec
+  // Claude.ai supports both formats (confirmed in research)
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // Stateless mode
-    enableJsonResponse: true, // Return JSON instead of SSE streams
+    enableJsonResponse: true, // Return JSON responses (valid per MCP spec)
   });
 
   // Connect server to transport
   await server.connect(transport);
 
   try {
+    logger.info(`MCP handleRequest: method=${request.method} url=${request.url} accept=${request.headers.get('Accept')} content-type=${request.headers.get('Content-Type')}`);
+
     // Handle the request through the SDK transport
-    return await transport.handleRequest(request);
+    const response = await transport.handleRequest(request);
+
+    logger.info(`MCP response: status=${response.status} content-type=${response.headers.get('Content-Type')}`);
+    return response;
+  } catch (error) {
+    logger.error('MCP handleRequest error', error);
+    throw error;
   } finally {
     // Clean up transport
     await transport.close();

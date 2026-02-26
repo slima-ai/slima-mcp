@@ -35,16 +35,17 @@ const tokenStore = new WeakMap<Request, string>();
 // RFC 6750: Should include scope parameter
 async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
   const authHeader = c.req.header('Authorization');
-  workerLogger.debug(`requireAuth: method=${c.req.method} path=${c.req.path} hasAuth=${!!authHeader} authPrefix=${authHeader?.slice(0, 20)}`);
+  const userAgent = c.req.header('User-Agent')?.slice(0, 50);
+  workerLogger.info(`requireAuth: method=${c.req.method} path=${c.req.path} hasAuth=${!!authHeader} authPrefix=${authHeader?.slice(0, 20)} UA=${userAgent}`);
 
   const token = await getTokenFromSession(c);
   if (!token) {
     const baseUrl = new URL(c.req.url).origin;
     workerLogger.info(`requireAuth: 401 - no valid token found, returning WWW-Authenticate`);
-    // RFC 9728 + RFC 6750: Include resource_metadata and scope in WWW-Authenticate header
-    // This tells the client where to discover OAuth endpoints and required scopes
-    // Note: resource_metadata points to the base URL (without /mcp suffix)
-    // per RFC 9728 Section 5.1 - clients construct the full path themselves
+    // RFC 9728 + RFC 6750: Include resource_metadata in WWW-Authenticate header
+    // Per RFC 9728 Section 5.1, the metadata URL uses the path suffix of the resource:
+    //   resource URL: https://mcp.slima.ai/mcp
+    //   metadata URL: https://mcp.slima.ai/.well-known/oauth-protected-resource/mcp
     return new Response(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -58,8 +59,8 @@ async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
         status: 401,
         headers: {
           'Content-Type': 'application/json',
-          // Use the resource-specific metadata URL for the /mcp endpoint
-          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`,
+          // RFC 9728 + RFC 6750: resource_metadata URL and scope for MCP auth discovery
+          'WWW-Authenticate': `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource/mcp", scope="read write"`,
         },
       }
     );
@@ -76,7 +77,8 @@ app.use('/mcp', cors({
   allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id', 'Mcp-Protocol-Version'],
   exposeHeaders: ['Mcp-Session-Id'],
-  credentials: true,
+  // Note: Do NOT set credentials:true with origin:'*' - invalid per CORS spec.
+  // Bearer tokens are sent via Authorization header, not cookies, so credentials mode is not needed.
 }));
 
 // CORS for OAuth and well-known endpoints
@@ -106,17 +108,58 @@ app.get('/', (c) => {
 });
 
 // MCP endpoint - using SDK's WebStandardStreamableHTTPServerTransport
-// Supports GET, POST, DELETE as per MCP Streamable HTTP spec
-app.all('/mcp', requireAuth, async (c) => {
-  const token = tokenStore.get(c.req.raw);
-  if (!token) {
-    // This should never happen since requireAuth already checked
-    return new Response('Unauthorized', { status: 401 });
+// Supports HEAD, GET, POST, DELETE as per MCP Streamable HTTP spec
+//
+// Authentication model (per Claude.ai connector requirements):
+// - HEAD: No auth (protocol version discovery)
+// - POST initialize/notifications/initialized: No auth (capability discovery)
+// - POST tools/list, tools/call, etc.: Auth required
+// - GET: Auth required (SSE stream)
+app.all('/mcp', async (c, next) => {
+  // HEAD /mcp - Protocol version discovery (MCP Streamable HTTP spec)
+  // No auth required - Claude.ai sends HEAD to discover protocol version before auth
+  if (c.req.method === 'HEAD') {
+    workerLogger.info(`HEAD /mcp - protocol discovery from ${c.req.header('User-Agent')?.slice(0, 50)}`);
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'MCP-Protocol-Version': '2025-11-25',
+        'Content-Type': 'application/json',
+      },
+    });
   }
 
+  // For POST requests without auth, check if it's an initialize/initialized method
+  // Claude.ai sends initialize WITHOUT Bearer token after OAuth (by design)
+  // These methods only return capabilities/ack - no user data access needed
+  if (c.req.method === 'POST') {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      try {
+        const clonedReq = c.req.raw.clone();
+        const body = await clonedReq.json() as { method?: string };
+        const method = body.method;
+        if (method === 'initialize' || method === 'notifications/initialized') {
+          workerLogger.info(`POST /mcp - unauthenticated ${method} allowed from ${c.req.header('User-Agent')?.slice(0, 50)}`);
+          await next();
+          return;
+        }
+      } catch {
+        // Body parse failed - fall through to requireAuth
+      }
+    }
+  }
+
+  // All other methods/requests require authentication
+  return requireAuth(c, next);
+}, async (c) => {
+  const token = tokenStore.get(c.req.raw);
+
+  // token may be empty for unauthenticated initialize requests
+  // This is fine - initialize only returns capabilities, doesn't call Rails API
   return handleMcpRequest(c.req.raw, {
     apiUrl: c.env.SLIMA_API_URL,
-    getToken: async () => token,
+    getToken: async () => token || '',
     logger: workerLogger,
   });
 });
@@ -182,12 +225,13 @@ app.get('/.well-known/oauth-authorization-server/:path', (c) => {
 
 // RFC 9728 - OAuth 2.0 Protected Resource Metadata
 // ChatGPT queries this to discover the authorization server
-// IMPORTANT: authorization_servers points to self (Worker acts as OAuth AS proxy)
+// IMPORTANT: resource MUST be the MCP endpoint URL (not just the base domain)
+// Per MCP Auth spec: "resource" identifies the protected MCP server endpoint
 app.get('/.well-known/oauth-protected-resource', (c) => {
   const baseUrl = new URL(c.req.url).origin;
   workerLogger.info(`well-known/oauth-protected-resource requested from ${c.req.header('User-Agent')?.slice(0, 50)}`);
   return c.json({
-    resource: baseUrl,
+    resource: `${baseUrl}/mcp`,
     authorization_servers: [baseUrl],
     scopes_supported: ['read', 'write'],
     bearer_methods_supported: ['header'],

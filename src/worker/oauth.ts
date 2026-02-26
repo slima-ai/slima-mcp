@@ -284,21 +284,23 @@ export function createOAuthRoutes(app: OAuthApp) {
         return c.redirect(callbackUrl.toString());
       }
 
-      const { access_token, expires_in } = await tokenResponse.json() as {
+      const tokenData = await tokenResponse.json() as {
         access_token: string;
+        refresh_token?: string;
         expires_in: number;
       };
 
       // Generate Worker authorization code
       const workerCode = crypto.randomUUID();
       const authCodeData: AuthCodeData = {
-        accessToken: access_token,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
         clientId: oauthReq.clientId,
         redirectUri: oauthReq.redirectUri,
         codeChallenge: oauthReq.codeChallenge,
         codeChallengeMethod: oauthReq.codeChallengeMethod,
         resource: oauthReq.resource, // RFC 8707
-        expiresIn: expires_in,
+        expiresIn: tokenData.expires_in,
         createdAt: Date.now(),
       };
 
@@ -543,12 +545,44 @@ export function createOAuthRoutes(app: OAuthApp) {
     const codeVerifier = body.code_verifier;
     const clientId = body.client_id;
     const redirectUri = body.redirect_uri;
+    const refreshToken = body.refresh_token;
 
-    logger.info('Token request', { grantType, clientId, hasCode: !!code, hasVerifier: !!codeVerifier, redirectUri });
+    logger.info('Token request', { grantType, clientId, hasCode: !!code, hasVerifier: !!codeVerifier, hasRefreshToken: !!refreshToken, redirectUri });
+
+    // Handle refresh_token grant type
+    if (grantType === 'refresh_token') {
+      if (!refreshToken) {
+        return oauthErrorResponse('invalid_request', 'Missing refresh_token parameter');
+      }
+      // Look up the refresh token in KV
+      const storedData = await c.env.OAUTH_KV.get(`refresh:${refreshToken}`);
+      if (!storedData) {
+        logger.warn('Invalid or expired refresh token');
+        return oauthErrorResponse('invalid_grant', 'Invalid or expired refresh token');
+      }
+      const { accessToken, expiresIn } = JSON.parse(storedData) as { accessToken: string; expiresIn: number };
+      // Generate a new refresh token
+      const newRefreshToken = crypto.randomUUID();
+      await c.env.OAUTH_KV.put(
+        `refresh:${newRefreshToken}`,
+        JSON.stringify({ accessToken, expiresIn }),
+        { expirationTtl: expiresIn || 2592000 }
+      );
+      // Delete old refresh token
+      await c.env.OAUTH_KV.delete(`refresh:${refreshToken}`);
+      logger.info('Token refreshed successfully', { tokenPrefix: accessToken?.slice(0, 10) });
+      return c.json({
+        access_token: accessToken,
+        token_type: 'bearer',
+        expires_in: expiresIn || 2592000,
+        scope: 'read write',
+        refresh_token: newRefreshToken,
+      });
+    }
 
     // Validate grant_type
     if (grantType !== 'authorization_code') {
-      return oauthErrorResponse('unsupported_grant_type', 'Only authorization_code grant is supported');
+      return oauthErrorResponse('unsupported_grant_type', 'Only authorization_code and refresh_token grants are supported');
     }
 
     // Validate required parameters
@@ -590,26 +624,33 @@ export function createOAuthRoutes(app: OAuthApp) {
       return oauthErrorResponse('invalid_grant', 'PKCE verification failed');
     }
 
+    // Generate a refresh_token (required by Claude.ai which registers with refresh_token grant)
+    const workerRefreshToken = crypto.randomUUID();
+    await c.env.OAUTH_KV.put(
+      `refresh:${workerRefreshToken}`,
+      JSON.stringify({
+        accessToken: authData.accessToken,
+        expiresIn: authData.expiresIn || 2592000,
+      }),
+      { expirationTtl: (authData.expiresIn || 2592000) * 2 } // Refresh token lives longer
+    );
+
     logger.info('Token issued successfully', {
       tokenPrefix: authData.accessToken?.slice(0, 10),
       expiresIn: authData.expiresIn,
-      hasResource: !!authData.resource,
+      hasRefreshToken: true,
     });
 
-    // Return the Rails token (RFC 8707: include resource if provided)
-    const tokenResponse: Record<string, unknown> = {
+    // Return standard OAuth 2.0 token response (RFC 6749)
+    // MUST include refresh_token - Claude.ai registers with grant_types: ["authorization_code", "refresh_token"]
+    // and expects a refresh_token in the response
+    return c.json({
       access_token: authData.accessToken,
-      token_type: 'Bearer',
+      token_type: 'bearer',
       expires_in: authData.expiresIn || 2592000, // 30 days default
       scope: 'read write',
-    };
-
-    // RFC 8707: Echo back the resource indicator if it was provided
-    if (authData.resource) {
-      tokenResponse.resource = authData.resource;
-    }
-
-    return c.json(tokenResponse);
+      refresh_token: workerRefreshToken,
+    });
   });
 
   /**

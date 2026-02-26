@@ -39,6 +39,8 @@ export interface OAuthRequestContext {
 export interface AuthCodeData {
   /** Rails access token (may be slima_xxx format or OAuth token) */
   accessToken: string;
+  /** Rails refresh token (if provided) */
+  refreshToken?: string;
   /** Client ID for validation */
   clientId: string;
   /** Redirect URI for validation */
