@@ -510,7 +510,7 @@ end
 
 #### 6. Authorization Page View
 
-> 遵循 [UIUX_SPEC.md](C:\Users\Tim Tsai\Desktop\codes\slima_vue\docs\specs\UIUX_SPEC.md) 設計規範：
+> 遵循 UIUX 設計規範：
 > - 主背景使用暖色奶白 `#FBFBFA`
 > - 黑白灰為主，顏色只用於傳達狀態
 > - Primary Button: 深灰色填充 `bg-gray-900`
