@@ -24,6 +24,7 @@ export function registerFileTools(
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       path: z.string().describe('File path (e.g., "characters/protagonist.md" or "chapter-01.md")'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ book_token, path }) => {
       try {
         const result = await client.readFile(book_token, path);
@@ -62,6 +63,7 @@ export function registerFileTools(
       content: z.string().describe('New content to write'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     async ({ book_token, path, content, commit_message }) => {
       try {
         const result = await client.updateFile(book_token, {
@@ -99,6 +101,7 @@ export function registerFileTools(
       replace_all: z.boolean().optional().describe('Replace all occurrences (default: false, replaces only first match)'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     async ({ book_token, path, old_string, new_string, replace_all, commit_message }) => {
       try {
         // 1. Read current content
@@ -177,6 +180,7 @@ export function registerFileTools(
       content: z.string().optional().describe('Initial content (optional, defaults to empty)'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async ({ book_token, path, content, commit_message }) => {
       try {
         const result = await client.createFile(book_token, {
@@ -211,6 +215,7 @@ export function registerFileTools(
       path: z.string().describe('File path to delete (e.g., "old-notes.md")'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     async ({ book_token, path, commit_message }) => {
       try {
         const result = await client.deleteFile(book_token, {
@@ -245,6 +250,7 @@ export function registerFileTools(
       content: z.string().describe('Content to append'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async ({ book_token, path, content, commit_message }) => {
       try {
         const result = await client.appendToFile(book_token, {
@@ -280,6 +286,7 @@ export function registerFileTools(
       file_types: z.array(z.string()).optional().describe('Filter by file types (e.g., ["markdown", "txt"])'),
       limit: z.number().optional().describe('Maximum number of matches to return (default: 20)'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ book_token, query, file_types, limit }) => {
       try {
         const result = await client.searchFiles(book_token, {

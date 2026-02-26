@@ -27,8 +27,10 @@ describe('Use Case: New Author Starting a Book', () => {
     handlers = new Map();
 
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as ToolHandler);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as ToolHandler;
+        handlers.set(name, handler);
         return server;
       }
     );
@@ -120,8 +122,10 @@ describe('Use Case: Daily Writing Workflow', () => {
     handlers = new Map();
 
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as ToolHandler);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as ToolHandler;
+        handlers.set(name, handler);
         return server;
       }
     );
@@ -218,8 +222,10 @@ describe('Use Case: Research and Organization', () => {
     handlers = new Map();
 
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as ToolHandler);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as ToolHandler;
+        handlers.set(name, handler);
         return server;
       }
     );
@@ -298,8 +304,10 @@ describe('Use Case: Beta Reader Feedback', () => {
     handlers = new Map();
 
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as ToolHandler);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as ToolHandler;
+        handlers.set(name, handler);
         return server;
       }
     );
@@ -440,8 +448,10 @@ describe('Use Case: Error Handling', () => {
     handlers = new Map();
 
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as ToolHandler);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as ToolHandler;
+        handlers.set(name, handler);
         return server;
       }
     );
@@ -564,8 +574,10 @@ describe('Use Case: Empty Book Handling', () => {
     handlers = new Map();
 
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as ToolHandler);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as ToolHandler;
+        handlers.set(name, handler);
         return server;
       }
     );

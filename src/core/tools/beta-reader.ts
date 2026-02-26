@@ -34,6 +34,7 @@ export function registerBetaReaderTools(
         .optional()
         .describe('Filter by genre (e.g., fantasy, romance, scifi)'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ genre }) => {
       try {
         const personas = await client.listPersonas(genre);
@@ -92,6 +93,7 @@ export function registerBetaReaderTools(
         .string()
         .describe('Persona token (e.g., psn_xxx). Use list_personas to find available personas.'),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async ({ book_token, file_path, persona_token }) => {
       try {
         // 1. Get latest commit and chapter content

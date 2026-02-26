@@ -38,7 +38,9 @@ describe('Beta Reader Tools', () => {
     // Capture tool handlers
     toolHandlers = new Map();
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _desc: string, _schema: unknown, handler: Function) => {
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as Function;
         toolHandlers.set(name, handler);
         return server;
       }

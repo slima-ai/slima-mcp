@@ -23,6 +23,7 @@ export function registerContentTools(
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       file_path: z.string().describe('File path (e.g., /chapters/01.md or chapter-01)'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ book_token, file_path }) => {
       try {
         // 1. Get latest commit

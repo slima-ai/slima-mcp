@@ -24,8 +24,10 @@ describe('File Tools Handlers', () => {
 
     // Capture handlers when tools are registered
     vi.spyOn(server, 'tool').mockImplementation(
-      (name: string, _description: string, _schema: unknown, handler: unknown) => {
-        handlers.set(name, handler as (params: Record<string, unknown>) => Promise<unknown>);
+      (...args: unknown[]) => {
+        const name = args[0] as string;
+        const handler = args[args.length - 1] as (params: Record<string, unknown>) => Promise<unknown>;
+        handlers.set(name, handler);
         return server;
       }
     );

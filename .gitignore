@@ -12,6 +12,7 @@ dist/
 *.pem
 credentials.json
 .slima/
+.mcpregistry_*
 
 # IDE
 .vscode/

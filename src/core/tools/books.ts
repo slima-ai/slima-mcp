@@ -25,6 +25,7 @@ export function registerBookTools(
       author_name: z.string().optional().describe('Author name (optional)'),
       description: z.string().optional().describe('Book description (optional)'),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async ({ title, author_name, description }) => {
       try {
         const book = await client.createBook({
@@ -55,6 +56,7 @@ export function registerBookTools(
     'list_books',
     'List all books in your Slima library',
     {},
+    { readOnlyHint: true, openWorldHint: true },
     async () => {
       try {
         const books = await client.listBooks();
@@ -101,6 +103,7 @@ export function registerBookTools(
     {
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ book_token }) => {
       try {
         const book = await client.getBook(book_token);
@@ -135,6 +138,7 @@ export function registerBookTools(
     {
       book_token: z.string().describe('Book token'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ book_token }) => {
       try {
         const commits = await client.listCommits(book_token, 1);
@@ -179,6 +183,7 @@ export function registerBookTools(
     {
       book_token: z.string().describe('Book token'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ book_token }) => {
       try {
         const [book, commits] = await Promise.all([
