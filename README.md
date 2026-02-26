@@ -154,7 +154,7 @@ For web-based AI tools like Claude.ai and ChatGPT, use our hosted Remote MCP Ser
 ### One-Click Connection
 
 1. In your AI tool, add a new MCP server
-2. Enter the URL: `https://slima-mcp.workers.dev/mcp`
+2. Enter the URL: `https://mcp.slima.ai/mcp`
 3. Click "Connect" - you'll be redirected to Slima
 4. Log in (or sign up) and click "Allow"
 5. Done! No token copying needed
@@ -166,7 +166,7 @@ For web-based AI tools like Claude.ai and ChatGPT, use our hosted Remote MCP Ser
 │  Claude.ai / ChatGPT Web                               │
 │                                                         │
 │  1. Click "Connect MCP Server"                          │
-│  2. Enter: https://slima-mcp.workers.dev/mcp           │
+│  2. Enter: https://mcp.slima.ai/mcp           │
 │     ↓                                                   │
 │  3. Redirect to Slima login                            │
 │     ↓                                                   │
@@ -327,6 +327,76 @@ slima-mcp/
 - All communication with Slima API uses HTTPS
 - Tokens can be revoked anytime from Slima settings
 
+## Release & Deployment
+
+### npm (Automatic)
+
+Merge to `main` with a version bump in `package.json` triggers automatic npm publish via GitHub Actions.
+
+```bash
+# 1. Bump version on dev branch
+npm version patch   # 0.1.10 → 0.1.11
+
+# 2. Merge to main
+git checkout main && git merge dev && git push
+
+# 3. CI runs tests → publish.yml publishes to npm + creates git tag
+```
+
+### Cloudflare Worker (Manual)
+
+Worker deployment is separate from npm. Deploy after code changes:
+
+```bash
+npm run deploy:worker           # Production (mcp.slima.ai)
+npm run deploy:worker:preview   # Staging
+```
+
+### MCP Registry (Manual)
+
+To publish/update the server listing on the [MCP Registry](https://registry.modelcontextprotocol.io/):
+
+```bash
+mcp-publisher login github
+mcp-publisher publish
+```
+
+Requires `mcpName` in `package.json` and `server.json` in repo root.
+
+## Operational Notes
+
+### Debugging Worker OAuth
+
+When troubleshooting claude.ai or ChatGPT connector issues:
+
+```bash
+# Live logs from production Worker
+wrangler tail slima-mcp
+```
+
+All OAuth endpoints log key parameters (client_id, redirect_uri, token prefix, etc.) to help trace the flow.
+
+### Worker OAuth Flow (claude.ai / ChatGPT)
+
+```
+Client POST /mcp → 401 + WWW-Authenticate header
+  → Client GET /.well-known/oauth-protected-resource
+  → Client GET /.well-known/oauth-authorization-server
+  → Client POST /register (DCR)
+  → Client redirects user to GET /authorize
+    → Worker redirects to Rails OAuth
+    → User authorizes → Rails redirects to Worker /callback
+    → Worker issues auth code → redirects to client callback
+  → Client POST /token (exchange code for access_token)
+  → Client POST /mcp (Authorization: Bearer {access_token})
+```
+
+### Known Constraints
+
+- Worker Bearer token validation accepts all non-empty tokens (not just `slima_` prefix) to support OAuth-issued tokens. Rails API performs actual validation.
+- `getTokenFromSession()` checks Authorization header first, then falls back to cookie session.
+- MCP Inspector (`npx @modelcontextprotocol/inspector`) is useful for testing the full OAuth flow independently.
+
 ## License
 
 MIT
@@ -336,4 +406,5 @@ MIT
 - [Slima Website](https://slima.ai)
 - [Slima App](https://app.slima.ai)
 - [MCP Documentation](https://modelcontextprotocol.io)
+- [MCP Registry](https://registry.modelcontextprotocol.io/)
 - [Report Issues](https://github.com/slima-ai/slima-mcp/issues)
