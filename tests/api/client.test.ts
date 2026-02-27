@@ -38,7 +38,7 @@ describe('SlimaApiClient', () => {
       expect(books).toHaveLength(2);
       expect(books[0].title).toBe('Book 1');
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.test.com/api/v1/books',
+        'https://api.test.com/api/v1/books?status=active',
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({

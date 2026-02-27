@@ -213,6 +213,15 @@ export function createOAuthRoutes(app: OAuthApp) {
     const error = c.req.query('error');
     const errorDescription = c.req.query('error_description');
 
+    logger.info('Callback received', {
+      hasCode: !!code,
+      state: state?.slice(0, 8),
+      error,
+      errorDescription,
+      userAgent: c.req.header('User-Agent')?.slice(0, 80),
+      referer: c.req.header('Referer')?.slice(0, 100),
+    });
+
     // Handle OAuth errors
     if (error) {
       // Check if this is an AI client flow
@@ -257,6 +266,7 @@ export function createOAuthRoutes(app: OAuthApp) {
         clientId: oauthReq.clientId,
         redirectUri: oauthReq.redirectUri,
         hasCodeChallenge: !!oauthReq.codeChallenge,
+        ageMs: Date.now() - oauthReq.createdAt,
       });
 
       // Exchange code with Rails
@@ -275,7 +285,12 @@ export function createOAuthRoutes(app: OAuthApp) {
 
       if (!tokenResponse.ok) {
         const errorData = await tokenResponse.json().catch(() => ({})) as { error?: string; error_description?: string };
-        logger.error('Token exchange failed', errorData);
+        logger.error('Token exchange with Rails failed', {
+          status: tokenResponse.status,
+          error: errorData.error,
+          description: errorData.error_description,
+          clientId: oauthReq.clientId,
+        });
 
         const callbackUrl = new URL(oauthReq.redirectUri);
         callbackUrl.searchParams.set('error', errorData.error || 'server_error');
@@ -547,7 +562,16 @@ export function createOAuthRoutes(app: OAuthApp) {
     const redirectUri = body.redirect_uri;
     const refreshToken = body.refresh_token;
 
-    logger.info('Token request', { grantType, clientId, hasCode: !!code, hasVerifier: !!codeVerifier, hasRefreshToken: !!refreshToken, redirectUri });
+    logger.info('Token request', {
+      grantType,
+      clientId,
+      hasCode: !!code,
+      codePrefix: code?.slice(0, 8),
+      hasVerifier: !!codeVerifier,
+      hasRefreshToken: !!refreshToken,
+      redirectUri,
+      userAgent: c.req.header('User-Agent')?.slice(0, 80),
+    });
 
     // Handle refresh_token grant type
     if (grantType === 'refresh_token') {
@@ -668,6 +692,7 @@ export function createOAuthRoutes(app: OAuthApp) {
         grantTypes: body.grant_types,
         responseTypes: body.response_types,
         tokenEndpointAuthMethod: body.token_endpoint_auth_method,
+        userAgent: c.req.header('User-Agent')?.slice(0, 80),
       });
 
       // Proxy to Rails DCR endpoint

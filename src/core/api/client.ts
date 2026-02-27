@@ -154,7 +154,7 @@ export class SlimaApiClient {
    * List all books
    */
   async listBooks(): Promise<Book[]> {
-    return this.request<Book[]>('GET', '/api/v1/books');
+    return this.request<Book[]>('GET', '/api/v1/books?status=active');
   }
 
   /**
