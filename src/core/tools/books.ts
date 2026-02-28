@@ -116,6 +116,7 @@ export function registerBookTools(
 - **Language**: ${book.language || 'N/A'}
 - **Total Words**: ${book.totalWordCount?.toLocaleString() || '0'}
 - **Manuscript Words**: ${book.manuscriptWordCount?.toLocaleString() || '0'}
+- **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'}
 - **Created**: ${book.createdAt}
 - **Updated**: ${book.updatedAt}`;
 
@@ -209,6 +210,7 @@ export function registerBookTools(
 
 - **Total Words**: ${book.totalWordCount?.toLocaleString() || '0'}
 - **Manuscript Words**: ${book.manuscriptWordCount?.toLocaleString() || '0'}
+- **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'}
 - **Recent Progress**: ${progressText}
 - **Commits Analyzed**: ${commits.length}
 - **Language**: ${book.language || 'N/A'}`;

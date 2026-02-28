@@ -12,6 +12,7 @@ export interface Book {
   language?: string;
   totalWordCount?: number;
   manuscriptWordCount?: number;
+  referenceWordCount?: number;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -28,6 +29,7 @@ export interface Commit {
   fileCount: number;
   totalWordCount: number;
   manuscriptWordCount: number;
+  referenceWordCount: number;
   deviceId?: string;
   deviceName?: string;
   createdAt: string;
