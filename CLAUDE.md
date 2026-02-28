@@ -407,11 +407,54 @@ Thin Client 架構的優點：
 
 ---
 
+## CI/CD 與部署
+
+### GitHub Actions
+
+| Workflow | 觸發條件 | 做什麼 |
+|----------|---------|--------|
+| `ci.yml` | PR 到 main、Push 到 main | tests (Node 20/22) + typecheck + build |
+| `publish.yml` | Push 到 main **且 `package.json` 有變** | 比較版本號 → 版本有變就 npm publish + 建 git tag |
+
+### 部署流程
+
+#### npm 發佈（自動）
+
+```bash
+# 1. 在 dev branch bump 版本
+npm version patch   # e.g., 0.1.14 → 0.1.15
+
+# 2. Push dev，開 PR 到 main，merge
+git push origin dev
+# GitHub 上開 PR → merge
+
+# 3. publish.yml 自動觸發：
+#    - 偵測 package.json 版本變更
+#    - 跑 tests + build
+#    - npm publish --provenance --access public
+#    - 建立 git tag (v0.1.15)
+```
+
+> **注意**：如果 merge 到 main 但 `package.json` 版本沒變，不會觸發 publish。
+
+#### Cloudflare Worker（手動）
+
+Worker 沒有自動部署 CI，需要手動執行：
+
+```bash
+npm run deploy:worker           # Production (mcp.slima.ai)
+npm run deploy:worker:preview   # Staging 預覽
+```
+
+Worker 和 CLI 共用 `src/core/` 程式碼，所以 core 有改動時兩邊都要部署。
+
+---
+
 ## 版本資訊
 
 - **Package Name**: `slima-mcp`
-- **Version**: 0.1.0
+- **Version**: 0.1.14
 - **MCP Protocol**: 1.x
-- **Tools**: 13 tools (4 books + 1 content + 2 beta-reader + 6 files)
-- **Tests**: 100 passing (88.66% coverage)
-- **最後更新**: 2026-01-28
+- **Tools**: 15 tools (5 books + 1 content + 2 beta-reader + 7 files)
+- **Tests**: 168 passing
+- **最後更新**: 2026-03-01
