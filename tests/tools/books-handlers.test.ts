@@ -117,6 +117,7 @@ describe('Book Tools Handlers', () => {
         language: 'zh-TW',
         totalWordCount: 50000,
         manuscriptWordCount: 45000,
+        referenceWordCount: 5000,
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-15T00:00:00Z',
       });
@@ -131,6 +132,8 @@ describe('Book Tools Handlers', () => {
       expect(content[0].text).toContain('A great story');
       expect(content[0].text).toContain('50,000');
       expect(content[0].text).toContain('45,000');
+      expect(content[0].text).toContain('Reference Words');
+      expect(content[0].text).toContain('5,000');
     });
 
     it('should handle book not found', async () => {
@@ -207,6 +210,7 @@ describe('Book Tools Handlers', () => {
         title: 'My Novel',
         totalWordCount: 50000,
         manuscriptWordCount: 45000,
+        referenceWordCount: 5000,
         language: 'zh-TW',
       });
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -221,6 +225,7 @@ describe('Book Tools Handlers', () => {
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content[0].text).toContain('Writing Stats');
       expect(content[0].text).toContain('50,000');
+      expect(content[0].text).toContain('Reference Words');
       expect(content[0].text).toContain('+5,000'); // 50000 - 45000
       expect(content[0].text).toContain('3 commits');
     });
