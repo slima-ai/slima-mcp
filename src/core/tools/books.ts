@@ -5,9 +5,30 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
+import type { Book } from '../api/types.js';
 import { formatErrorForMcp } from '../utils/errors.js';
 import { buildFileTree, formatFileTree } from '../utils/file-tree.js';
 import type { FlatFileSnapshot } from '../utils/file-tree.js';
+
+// Shared Studio presentation helpers. Kept here because they're only useful
+// for books.ts' markdown output formatting; other tools use bookType directly.
+function studioLabel(book: Pick<Book, 'bookType'>): string {
+  return book.bookType === 'script' ? '📝 Script Studio' : '📖 Writing Studio';
+}
+
+function scriptStudioWriteRulesBlock(book: Pick<Book, 'token'>): string {
+  return `### 🔒 Write Restrictions (Script Studio)
+
+This book uses **structured schemas**. Via MCP you can:
+- ✅ **Read** any file (series.json, *.character, *.scene, etc.)
+- ✅ **Write / Edit / Delete** under \`.script_studio/planning/**/*\` only (free-form reference tree)
+- ❌ **Cannot modify** structured files (\`series.json\`, \`season.json\`, \`episode.json\`, \`*.character\`, \`*.location\`, \`*.scene\`, \`*.storyline\`, \`*.note\`)
+- ❌ **Cannot modify** \`.script_studio/planning/.initialized\` (frontend bootstrap sentinel)
+
+To add characters / scenes / storylines, use the Script Studio UI in the Slima app.
+
+For full per-book details, read the MCP resource: \`slima://books/${book.token}/schema\`.`;
+}
 
 /**
  * Register book-related tools
@@ -19,7 +40,11 @@ export function registerBookTools(
   // === create_book ===
   server.tool(
     'create_book',
-    'Create a new book in your Slima library',
+    `Create a new **Writing Studio** book in your Slima library.
+
+Only Writing Studio (free-form novels / long-form prose) books can be created via MCP.
+To create a **Script Studio** book (screenwriting with structured series/seasons/episodes/scenes),
+please use the Slima app UI — MCP does not yet support Script Studio scaffolding.`,
     {
       title: z.string().describe('Book title (required)'),
       author_name: z.string().optional().describe('Author name (optional)'),
@@ -75,7 +100,7 @@ export function registerBookTools(
         const formatted = books
           .map((book) => {
             const words = book.totalWordCount?.toLocaleString() || '0';
-            return `- **${book.title}** (${book.token})\n  Author: ${book.authorName || 'N/A'} | Words: ${words}`;
+            return `- **${book.title}** (${book.token}) — ${studioLabel(book)}\n  Author: ${book.authorName || 'N/A'} | Words: ${words}`;
           })
           .join('\n\n');
 
@@ -83,7 +108,7 @@ export function registerBookTools(
           content: [
             {
               type: 'text',
-              text: `Found ${books.length} book(s):\n\n${formatted}`,
+              text: `Found ${books.length} book(s):\n\n${formatted}\n\n_📝 Script Studio books have write restrictions via MCP (see \`get_book\` or resource \`slima://books/{token}/schema\`). 📖 Writing Studio books are fully writable._`,
             },
           ],
         };
@@ -108,7 +133,7 @@ export function registerBookTools(
       try {
         const book = await client.getBook(book_token);
 
-        const text = `# ${book.title}
+        const header = `# ${studioLabel(book)} — ${book.title}
 
 - **Token**: ${book.token}
 - **Author**: ${book.authorName || 'N/A'}
@@ -119,6 +144,11 @@ export function registerBookTools(
 - **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'}
 - **Created**: ${book.createdAt}
 - **Updated**: ${book.updatedAt}`;
+
+        const text =
+          book.bookType === 'script'
+            ? `${header}\n\n${scriptStudioWriteRulesBlock(book)}`
+            : header;
 
         return {
           content: [{ type: 'text', text }],
@@ -142,7 +172,10 @@ export function registerBookTools(
     { readOnlyHint: true, openWorldHint: true },
     async ({ book_token }) => {
       try {
-        const commits = await client.listCommits(book_token, 1);
+        const [book, commits] = await Promise.all([
+          client.getBook(book_token),
+          client.listCommits(book_token, 1),
+        ]);
 
         if (commits.length === 0) {
           return {
@@ -160,11 +193,16 @@ export function registerBookTools(
         const nestedTree = buildFileTree(flatSnapshot);
         const tree = formatFileTree(nestedTree);
 
+        const footer =
+          book.bookType === 'script'
+            ? `\n\n_📝 This is a Script Studio book. Via MCP, writes are restricted to \`.script_studio/planning/**/*\`. For the full write-restriction spec, read resource \`slima://books/${book.token}/schema\`._`
+            : '';
+
         return {
           content: [
             {
               type: 'text',
-              text: `File structure for book ${book_token}:\n\n${tree}`,
+              text: `File structure for ${studioLabel(book)} — ${book.title} (${book_token}):\n\n${tree}${footer}`,
             },
           ],
         };

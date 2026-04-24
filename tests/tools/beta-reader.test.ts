@@ -28,6 +28,7 @@ describe('Beta Reader Tools', () => {
 
     mockClient = {
       listPersonas: vi.fn(),
+      getBook: vi.fn(),
       listCommits: vi.fn(),
       downloadBlobs: vi.fn(),
       createReaderTest: vi.fn(),
@@ -203,7 +204,15 @@ describe('Beta Reader Tools', () => {
     };
 
     beforeEach(() => {
-      // Default successful mocks
+      // Default successful mocks. getBook returns a Writing Studio book by default
+      // so analyze_chapter's Script Studio gate passes through.
+      mockClient.getBook.mockResolvedValue({
+        token: 'bk_test',
+        title: 'Test Book',
+        bookType: 'book',
+        createdAt: '',
+        updatedAt: '',
+      });
       mockClient.listCommits.mockResolvedValue([
         { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
       ]);

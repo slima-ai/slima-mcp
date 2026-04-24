@@ -6,12 +6,12 @@
     "url": "https://github.com/slima-ai/slima-mcp",
     "source": "github"
   },
-  "version": "0.1.14",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "slima-mcp",
-      "version": "0.1.14",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },

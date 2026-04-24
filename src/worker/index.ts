@@ -14,7 +14,9 @@ import { createOAuthRoutes, getTokenFromSession, Env, OAuthApp } from './oauth.j
 import { handleMcpRequest } from './mcp-handler.js';
 import type { Logger } from '../core/api/client.js';
 
-const VERSION = '0.1.0';
+// __VERSION__ is injected at build time by tsup.worker.config.ts.
+declare const __VERSION__: string;
+const VERSION = __VERSION__;
 
 // Simple logger for Worker environment
 const workerLogger: Logger = {

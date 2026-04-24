@@ -85,9 +85,11 @@ export function registerBetaReaderTools(
   // === analyze_chapter ===
   server.tool(
     'analyze_chapter',
-    'Get AI Beta Reader feedback on a chapter from a specific reader persona. This may take a moment to complete.',
+    `Get AI Beta Reader feedback on a chapter from a specific reader persona. This may take a moment to complete.
+
+**Not supported for Script Studio books** (\`book_type: "script"\`) — AI Beta Reader is a Writing Studio feature and does not yet parse \`.scene\` or \`series.json\` structures. Use the Script Studio UI's built-in analysis for screenplays.`,
     {
-      book_token: z.string().describe('Book token (e.g., bk_abc123)'),
+      book_token: z.string().describe('Book token (e.g., bk_abc123) — must be a Writing Studio book (book_type: "book").'),
       file_path: z.string().describe('Chapter file path (e.g., /chapters/01.md)'),
       persona_token: z
         .string()
@@ -96,6 +98,22 @@ export function registerBetaReaderTools(
     { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async ({ book_token, file_path, persona_token }) => {
       try {
+        // Gate: reject Script Studio books — AI Beta Reader does not parse
+        // scene/character schema yet. Fetch before any other work so we don't
+        // waste a commits/list call.
+        const book = await client.getBook(book_token);
+        if (book.bookType === 'script') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `❌ analyze_chapter is not available for Script Studio books.\n\nBook "${book.title}" (${book.token}) is a Script Studio book. Please use the Script Studio UI's built-in analysis features (structural notes, character consistency, scene-level feedback) — AI Beta Reader is a Writing Studio feature.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         // 1. Get latest commit and chapter content
         const commits = await client.listCommits(book_token, 1);
 

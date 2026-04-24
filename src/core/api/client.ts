@@ -5,6 +5,10 @@
  * allowing different strategies for CLI (file-based) vs Worker (KV-based).
  */
 
+// Version is injected at build time by tsup `define` (CLI + Worker) and mirrored
+// in vitest.config.ts so tests see a real version string too.
+declare const __VERSION__: string;
+
 import {
   type Book,
   type Commit,
@@ -108,10 +112,15 @@ export class SlimaApiClient {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'slima-mcp-server/0.1.0',
+        'User-Agent': `slima-mcp-server/${__VERSION__}`,
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+
+    // Rails surfaces a soft staleness signal via this header when the client
+    // is older than McpVersions::MIN_RECOMMENDED. Log once per request so the
+    // user / wrapping AI client notices without hard-failing the call.
+    this.handleUpgradeHint(response);
 
     if (!response.ok) {
       await this.handleErrorResponse(response);
@@ -119,6 +128,27 @@ export class SlimaApiClient {
 
     const json = (await response.json()) as ApiResponse<T>;
     return json.data;
+  }
+
+  /**
+   * Surface the X-Slima-MCP-Upgrade-Hint header (if present) as a warn log.
+   * Deduped per (hint, baseUrl) to keep stderr quiet during long sessions.
+   * Defensive: mocked Response objects in tests may not carry a full Headers
+   * interface, so guard the access rather than hard-crashing the request.
+   */
+  private readonly loggedUpgradeHints = new Set<string>();
+  private handleUpgradeHint(response: Response): void {
+    const hint = response?.headers?.get?.('X-Slima-MCP-Upgrade-Hint');
+    if (!hint) return;
+
+    const key = `${hint}::${this.baseUrl}`;
+    if (this.loggedUpgradeHints.has(key)) return;
+    this.loggedUpgradeHints.add(key);
+
+    this.logger.warn(
+      `[slima-mcp] ${hint} — upgrade options: npm install -g slima-mcp@latest, ` +
+        'or change your Claude Desktop config to "npx -y slima-mcp@0".'
+    );
   }
 
   /**

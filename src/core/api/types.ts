@@ -4,9 +4,14 @@
 
 // === 書籍相關 ===
 
+export type BookType = 'book' | 'script';
+
 export interface Book {
   token: string;
   title: string;
+  // 'book' = Writing Studio (free-form markdown tree)
+  // 'script' = Script Studio (schema-driven screenwriting; MCP writes restricted to planning/)
+  bookType?: BookType;
   authorName?: string;
   description?: string;
   language?: string;
