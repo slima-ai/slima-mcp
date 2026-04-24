@@ -149,7 +149,12 @@ describe('Book Tools Handlers', () => {
   });
 
   describe('get_book_structure handler', () => {
+    // get_book_structure now fetches the book to tag output with Studio label
+    // and a Resource-URI footer for Script Studio books.
+    const writingBook = { token: 'bk_test', title: 'Test Book', bookType: 'book' as const, createdAt: '', updatedAt: '' };
+
     it('should return formatted file tree', async () => {
+      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue(writingBook);
       // Mock uses flat parentToken structure (as returned by API)
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
@@ -175,6 +180,7 @@ describe('Book Tools Handlers', () => {
     });
 
     it('should handle empty book (no commits)', async () => {
+      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue(writingBook);
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       const handler = handlers.get('get_book_structure')!;
@@ -185,6 +191,7 @@ describe('Book Tools Handlers', () => {
     });
 
     it('should show manuscript marker', async () => {
+      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue(writingBook);
       // Mock uses flat parentToken structure (as returned by API)
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
         {

@@ -10,6 +10,8 @@ import {
   registerBetaReaderTools,
   registerFileTools,
 } from '../core/tools/index.js';
+import { registerBookSchemaResource } from '../core/resources/index.js';
+import { SERVER_INSTRUCTIONS } from '../core/server-instructions.js';
 import { logger } from '../core/utils/logger.js';
 
 declare const __VERSION__: string;
@@ -30,16 +32,24 @@ export function createSlimaServer(config: ServerConfig): McpServer {
     logger,
   });
 
-  const server = new McpServer({
-    name: 'slima',
-    version: __VERSION__,
-  });
+  const server = new McpServer(
+    {
+      name: 'slima',
+      version: __VERSION__,
+    },
+    {
+      instructions: SERVER_INSTRUCTIONS,
+    }
+  );
 
   // Register tools
   registerBookTools(server, client);
   registerContentTools(server, client);
   registerBetaReaderTools(server, client, logger);
   registerFileTools(server, client);
+
+  // Register resources (per-book schema via URI template)
+  registerBookSchemaResource(server, client);
 
   logger.info('Slima MCP Server initialized');
   logger.info(`API endpoint: ${config.baseUrl || 'https://api.slima.ai'}`);

@@ -51,34 +51,49 @@ Connect your Slima books to **any MCP-compatible AI tool** - one server, all pla
 
 ## Quick Start
 
-### 1. Install
+**Pick the path that matches how you use AI:**
 
-```bash
-npm install -g slima-mcp
-```
+- ⭐ Use **claude.ai / ChatGPT in a web browser** → [Recommended: web connector](#recommended-claudeai--chatgpt-web-auto-updating) *(one-time setup, auto-updates forever)*
+- Use **Claude Desktop / Cursor / Gemini CLI locally** → [Local install with `npx`](#local-claude-desktop--cursor--gemini-cli)
+- Running in air-gapped / enterprise environments → [Self-host](#self-host-advanced)
 
-Or run directly with npx:
+### Recommended: claude.ai / ChatGPT Web (auto-updating)
 
-```bash
-npx slima-mcp
-```
+If you chat with Claude or ChatGPT in a browser, this is the easiest and most future-proof option. **Configure once and you will automatically get every Slima MCP update** — no upgrade commands, no config edits.
 
-### 2. Get Your API Token
+**MCP URL:** `https://mcp.slima.ai/mcp`
 
-```bash
-slima-mcp auth
-```
+#### claude.ai (Pro / Max / Team / Enterprise)
 
-This will open your browser to authenticate with Slima. Your token will be saved automatically.
+1. Sign in at [claude.ai](https://claude.ai).
+2. Open **Settings → Connectors** (or **Integrations** depending on your plan).
+3. Click **Add custom connector**.
+4. Fill in:
+   - **Name:** `Slima`
+   - **URL:** `https://mcp.slima.ai/mcp`
+5. Click **Connect** → you will be redirected to slima.ai to approve → return to claude.ai.
+6. The Slima tools icon appears in your chat input. You're done.
 
-**Or manually:**
-1. Go to [Slima Settings](https://app.slima.ai/settings/api-tokens)
-2. Click "Generate API Token"
-3. Copy the token
+#### ChatGPT (Plus / Pro, Developer Mode)
 
-### 3. Configure Your AI Tool
+1. Sign in at [chatgpt.com](https://chatgpt.com).
+2. Open **Settings → Connectors → Advanced** and toggle **Developer Mode** on (2025.10+).
+3. Back in **Connectors**, click **Create → Custom MCP Server**.
+4. Fill in:
+   - **Name:** `Slima`
+   - **Server URL:** `https://mcp.slima.ai/mcp`
+   - **Authentication:** OAuth
+5. Click **Create** → approve the OAuth flow.
 
-If you used `slima-mcp auth`, the token is saved automatically. Just add:
+After setup, Slima features roll out automatically on your next conversation. No restarts, no reinstalls.
+
+---
+
+### Local: Claude Desktop / Cursor / Gemini CLI
+
+Use this if you want offline-friendly operation, faster startup, or you need to run MCP alongside other stdio servers.
+
+**Recommended config** — pinned to the major version so you pick up new features automatically but never break on a `1.0` release:
 
 #### Claude Desktop
 
@@ -89,46 +104,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
   "mcpServers": {
     "slima": {
       "command": "npx",
-      "args": ["-y", "slima-mcp"]
-    }
-  }
-}
-```
-
-That's it! No environment variables needed.
-
-#### Cursor
-
-Add to Cursor's MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "slima": {
-      "command": "npx",
-      "args": ["-y", "slima-mcp"]
-    }
-  }
-}
-```
-
-#### Gemini CLI
-
-```bash
-gemini mcp add slima --command "npx -y slima-mcp"
-```
-
-<details>
-<summary>Alternative: Using environment variables</summary>
-
-If you prefer to use environment variables instead of `slima-mcp auth`:
-
-```json
-{
-  "mcpServers": {
-    "slima": {
-      "command": "npx",
-      "args": ["-y", "slima-mcp"],
+      "args": ["-y", "slima-mcp@0"],
       "env": {
         "SLIMA_API_TOKEN": "slima_your_token_here"
       }
@@ -137,53 +113,84 @@ If you prefer to use environment variables instead of `slima-mcp auth`:
 }
 ```
 
-Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens).
+Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens) or run `npx slima-mcp@0 auth` once to save it to disk.
 
-</details>
+#### Cursor
 
-### 4. Restart Your AI Tool
+```json
+{
+  "mcpServers": {
+    "slima": {
+      "command": "npx",
+      "args": ["-y", "slima-mcp@0"],
+      "env": {
+        "SLIMA_API_TOKEN": "slima_your_token_here"
+      }
+    }
+  }
+}
+```
 
-After saving the configuration, restart the application to load Slima MCP.
+#### Gemini CLI
+
+```bash
+gemini mcp add slima --command "npx -y slima-mcp@0"
+```
+
+> **Why `slima-mcp@0` instead of `slima-mcp` / `slima-mcp@latest`?** Using `@0` pins to the current major version — npx still fetches new `0.x.y` releases automatically (so you get features + bug fixes), but when we ship `1.0.0` with breaking changes you won't silently pick it up without updating your config. We'll announce the `@1` switch in the release notes.
+
+#### Migrating from a global install
+
+If you already installed globally with `npm install -g slima-mcp`:
+
+```bash
+# Remove the old global install (optional but cleaner)
+npm uninstall -g slima-mcp
+
+# Change your config `command` from "slima-mcp" to the npx form above, and restart the client.
+```
+
+Or, if you want to stay on a global install, remember to periodically run:
+
+```bash
+npm install -g slima-mcp@latest
+```
+
+Otherwise your local client will drift from the MCP tools/schema the Slima backend exposes.
+
+### Self-host (advanced)
+
+You can also clone this repo and deploy the Cloudflare Worker yourself. See `wrangler.toml` + `npm run deploy:worker`. Not required for normal use.
 
 ---
 
-## Web Applications (Remote MCP)
+## Remote MCP Security
 
-For web-based AI tools like Claude.ai and ChatGPT, use our hosted Remote MCP Server.
+The hosted Remote MCP Server at `https://mcp.slima.ai/mcp` uses:
 
-### One-Click Connection
+- **OAuth 2.0 + PKCE** for authentication — no tokens copy-pasted.
+- **No secrets stored server-side** — credentials never leave Slima's auth server.
+- **Session-based**: OAuth tokens are stored in Cloudflare KV, scoped per session.
+- **Revocable anytime** from [Slima Settings](https://app.slima.ai/settings/api-tokens).
 
-1. In your AI tool, add a new MCP server
-2. Enter the URL: `https://mcp.slima.ai/mcp`
-3. Click "Connect" - you'll be redirected to Slima
-4. Log in (or sign up) and click "Allow"
-5. Done! No token copying needed
+---
 
-### How It Works
+## Book Types: Writing Studio vs Script Studio
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Claude.ai / ChatGPT Web                               │
-│                                                         │
-│  1. Click "Connect MCP Server"                          │
-│  2. Enter: https://mcp.slima.ai/mcp           │
-│     ↓                                                   │
-│  3. Redirect to Slima login                            │
-│     ↓                                                   │
-│  4. Approve authorization                              │
-│     ↓                                                   │
-│  5. Automatically connected!                           │
-│                                                         │
-│  No API tokens. No configuration. Just works.          │
-└─────────────────────────────────────────────────────────┘
-```
+Slima books come in two flavors, distinguished by the `book_type` field. MCP behaves slightly differently for each:
 
-### Security
+| | 📖 Writing Studio (`book_type: "book"`) | 📝 Script Studio (`book_type: "script"`) |
+|---|---|---|
+| **Creation via MCP** | ✅ `create_book` works | ❌ use the Slima app UI |
+| **Read** (any file) | ✅ | ✅ |
+| **Write / Edit / Delete** | ✅ any path | ✅ only under `.script_studio/planning/**/*` |
+| Structured files (`series.json`, `*.character`, `*.scene`, `*.storyline`, `*.note`, `*.location`, `season.json`, `episode.json`) | n/a | ❌ read-only via MCP — edits must go through the Script Studio UI |
+| `analyze_chapter` (AI Beta Reader) | ✅ | ❌ not yet supported on structured scenes |
+| `search_content` | all files | structured files excluded by default; pass `include_structured: true` to include them |
 
-- **OAuth 2.0 + PKCE**: Industry-standard secure authentication
-- **No Secrets Stored**: The server never stores your credentials
-- **Session-Based**: Your token is stored securely in Cloudflare KV
-- **Revocable**: Revoke access anytime from [Slima Settings](https://app.slima.ai/settings/api-tokens)
+For per-book details, ask your AI client to read the resource `slima://books/{book_token}/schema` — it returns a JSON spec of exactly which paths are writable/read-only for that specific book.
+
+`list_books` tags every book with its studio icon (📝 / 📖) so you (and the AI) can tell them apart at a glance.
 
 ---
 

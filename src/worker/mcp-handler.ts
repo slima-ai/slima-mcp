@@ -14,8 +14,12 @@ import {
   registerBetaReaderTools,
   registerFileTools,
 } from '../core/tools/index.js';
+import { registerBookSchemaResource } from '../core/resources/index.js';
+import { SERVER_INSTRUCTIONS } from '../core/server-instructions.js';
 
-const VERSION = '0.1.0';
+// __VERSION__ is injected at build time by tsup.worker.config.ts.
+declare const __VERSION__: string;
+const VERSION = __VERSION__;
 
 export interface McpHandlerOptions {
   apiUrl: string;
@@ -43,16 +47,24 @@ export async function handleMcpRequest(
   });
 
   // Create MCP server
-  const server = new McpServer({
-    name: 'slima',
-    version: VERSION,
-  });
+  const server = new McpServer(
+    {
+      name: 'slima',
+      version: VERSION,
+    },
+    {
+      instructions: SERVER_INSTRUCTIONS,
+    }
+  );
 
   // Register all tools
   registerBookTools(server, client);
   registerContentTools(server, client);
   registerBetaReaderTools(server, client, logger);
   registerFileTools(server, client);
+
+  // Register resources (per-book schema via URI template)
+  registerBookSchemaResource(server, client);
 
   // Create transport in stateless mode (appropriate for Workers)
   // enableJsonResponse: true is spec-compliant - both JSON and SSE are valid per MCP spec

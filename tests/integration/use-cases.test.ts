@@ -314,6 +314,13 @@ describe('Use Case: Beta Reader Feedback', () => {
 
     mockClient = {
       listPersonas: vi.fn(),
+      getBook: vi.fn().mockResolvedValue({
+        token: 'bk_test',
+        title: 'Test Book',
+        bookType: 'book',
+        createdAt: '',
+        updatedAt: '',
+      }),
       createReaderTest: vi.fn(),
       getReaderTestProgress: vi.fn(),
       getReaderTest: vi.fn(),
@@ -458,6 +465,13 @@ describe('Use Case: Error Handling', () => {
 
     mockClient = {
       listBooks: vi.fn(),
+      getBook: vi.fn().mockResolvedValue({
+        token: 'bk_test',
+        title: 'Test Book',
+        bookType: 'book',
+        createdAt: '',
+        updatedAt: '',
+      }),
       readFile: vi.fn(),
       createReaderTest: vi.fn(),
       getReaderTestProgress: vi.fn(),
@@ -584,6 +598,13 @@ describe('Use Case: Empty Book Handling', () => {
 
     mockClient = {
       listBooks: vi.fn(),
+      getBook: vi.fn().mockResolvedValue({
+        token: 'bk_empty',
+        title: 'Empty Book',
+        bookType: 'book',
+        createdAt: '',
+        updatedAt: '',
+      }),
       listCommits: vi.fn(),
       searchFiles: vi.fn(),
     };
