@@ -42,6 +42,22 @@ vars = { SLIMA_API_URL = "http://localhost:3000", OAUTH_CLIENT_ID = "slima-mcp-w
 binding = "OAUTH_KV"
 id = "your-dev-kv-namespace-id"  # Replace after `wrangler kv:namespace create OAUTH_KV --env dev`
 
+# Test environment — delegates OAuth to the TEST Rails backend (test-api.slima.ai).
+# Custom domain test-mcp.slima.ai (single-level → free Universal SSL, matches the test-api.slima.ai
+# convention). IMPORTANT: `routes` MUST be defined here explicitly — `routes` is an inheritable key,
+# so omitting it would inherit mcp.slima.ai and STEAL the prod custom domain on every deploy.
+# Fully isolated from prod: own name / KV / route / SLIMA_API_URL.
+[env.test]
+name = "slima-mcp-test"
+routes = [
+  { pattern = "test-mcp.slima.ai", custom_domain = true }
+]
+vars = { SLIMA_API_URL = "https://test-api.slima.ai", OAUTH_CLIENT_ID = "slima-mcp-worker" }
+
+[[env.test.kv_namespaces]]
+binding = "OAUTH_KV"
+id = "663e9957037648fea59274bb5dd941ce"
+
 # Limits (free tier)
 # - 100,000 requests/day
 # - 10ms CPU time per request
