@@ -62,12 +62,17 @@ export function registerBookSchemaResource(
 
 export function buildBookSchema(book: Book): Record<string, unknown> {
   const isScript = book.bookType === 'script';
+  const isKnowledge = book.bookType === 'knowledge';
 
   return {
     book_token: book.token,
     book_title: book.title,
     book_type: book.bookType ?? 'book',
-    studio_label: isScript ? 'Script Studio' : 'Writing Studio',
+    studio_label: isScript
+      ? 'Script Studio'
+      : isKnowledge
+        ? 'Team Knowledge Base'
+        : 'Writing Studio',
     mcp_capabilities: {
       // Note: actual reads still go through validate_safe_path!
       // (blocks absolute paths, traversal, control chars) even though it's
@@ -90,6 +95,13 @@ export function buildBookSchema(book: Book): Record<string, unknown> {
           ]
         : [],
       reserved_sentinels: isScript ? ['.script_studio/planning/.initialized'] : [],
+      // Path allowlists are not the whole story on a team book: the server also
+      // checks the caller's ROLE. An editor gets 403 on every write no matter
+      // which path, so "writable_paths" above is an upper bound, not a promise.
+      write_access_note: isKnowledge
+        ? 'Team knowledge base: owner / admin / seated writer may write; an editor is read-only ' +
+          '(every write returns 403). Files under .slima/skills/ may be enabled as team skills by a manager.'
+        : 'Personal books: the owner and writer collaborators may write; editor collaborators are read-only.',
     },
     // AI file-type policy — mirrors slima_vue `fileTypeRegistry.ts` (`aiPolicy`).
     // Applies to BOTH studio types; the Script Studio path allowlist above is a
@@ -129,7 +141,12 @@ export function buildBookSchema(book: Book): Record<string, unknown> {
       : {},
     notes: isScript
       ? 'Structured files require schema-aware edits — use the Script Studio UI. MCP write access is restricted to planning/ (free-form reference tree) to prevent schema corruption.'
-      : 'Writing Studio books are free-form. No schema restrictions; any path is writable.',
+      : isKnowledge
+        ? 'Team knowledge base. Free-form paths, but two team rules apply: writes follow team role ' +
+          '(see write_access_note), and a file marked confidential is returned WITHOUT its content — ' +
+          'read_file reports it as withheld rather than empty. That is intentional: the AI may use ' +
+          'such a skill without reading it. Never try to rewrite a withheld file.'
+        : 'Writing Studio books are free-form. No schema restrictions; any path is writable.',
     policy_source: 'Rails: Mcp::FileOperationService#validate_studio_write_path!',
   };
 }

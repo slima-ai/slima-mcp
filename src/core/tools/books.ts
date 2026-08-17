@@ -13,7 +13,12 @@ import type { FlatFileSnapshot } from '../utils/file-tree.js';
 // Shared Studio presentation helpers. Kept here because they're only useful
 // for books.ts' markdown output formatting; other tools use bookType directly.
 function studioLabel(book: Pick<Book, 'bookType'>): string {
-  return book.bookType === 'script' ? '📝 Script Studio' : '📖 Writing Studio';
+  if (book.bookType === 'script') return '📝 Script Studio';
+  // A team's shared knowledge base used to fall through to "Writing Studio",
+  // which hid both that it is team-owned and that some of its files may be
+  // present-but-withheld.
+  if (book.bookType === 'knowledge') return '📚 Team Knowledge Base';
+  return '📖 Writing Studio';
 }
 
 function scriptStudioWriteRulesBlock(book: Pick<Book, 'token'>): string {

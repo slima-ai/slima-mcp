@@ -4,7 +4,10 @@
 
 // === 書籍相關 ===
 
-export type BookType = 'book' | 'script';
+// Mirrors Rails `Book::BOOK_TYPES`. 'knowledge' is a team's shared reference
+// book — it is NOT a manuscript (excluded from word-count/streak machinery) and
+// it is the only book type where some files can be present but withheld.
+export type BookType = 'book' | 'script' | 'knowledge';
 
 export interface Book {
   token: string;
@@ -12,6 +15,10 @@ export interface Book {
   // 'book' = Writing Studio (free-form markdown tree)
   // 'script' = Script Studio (schema-driven screenwriting; MCP writes restricted to planning/)
   bookType?: BookType;
+  /** 'personal' | 'team' — a team book's write rules follow team role, not ownership */
+  ownershipType?: string;
+  /** The caller's role on this book ('owner' | 'admin' | 'writer' | 'editor' | null) */
+  myRole?: string | null;
   authorName?: string;
   description?: string;
   language?: string;
@@ -257,7 +264,19 @@ export interface McpFile {
 
 export interface McpFileReadResponse {
   file: McpFile;
-  content: string;
+  /** null when the content was withheld or the read budget was spent */
+  content: string | null;
+  /**
+   * Phase KP §4.1 — a confidential team skill read by a non-manager. The AI can
+   * still USE the skill (the server injects it as the team owner); it just may
+   * not read the source. Rendering this as an empty file makes the model try to
+   * "repair" a file it is forbidden to write.
+   */
+  contentWithheld?: boolean;
+  withheldReason?: string;
+  /** Phase KP §4.4 — the team's daily skill-read budget is spent. */
+  throttled?: boolean;
+  throttledReason?: string;
 }
 
 export interface McpFileVisualizeResponse {
