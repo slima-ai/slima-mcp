@@ -91,6 +91,30 @@ export function buildBookSchema(book: Book): Record<string, unknown> {
         : [],
       reserved_sentinels: isScript ? ['.script_studio/planning/.initialized'] : [],
     },
+    // AI file-type policy — mirrors slima_vue `fileTypeRegistry.ts` (`aiPolicy`).
+    // Applies to BOTH studio types; the Script Studio path allowlist above is a
+    // separate, additional restriction.
+    ai_file_policy: {
+      writable: ['.md', '.markdown', '.txt'],
+      readonly: [
+        '.map',
+        '.geomap',
+        '.script',
+        '.timeline',
+        '.character',
+        '.location',
+        '.json',
+        '.yaml',
+        '.yml',
+      ],
+      readonly_note:
+        'Read-only means the AI must not write these via write_file / edit_file / create_file / ' +
+        'append_to_file / delete_file. Slima owns their structure; overwriting one corrupts it for the ' +
+        'author. Recommend changes in words and point the author at that file type\'s editor.',
+      viewers: {
+        '.map': 'view_relationship_map — renders the graph as an image plus a cast/relationship summary',
+      },
+    },
     structured_file_types: isScript
       ? {
           'series.json': 'Series metadata (title, genre, logline, theme, synopsis, acts)',

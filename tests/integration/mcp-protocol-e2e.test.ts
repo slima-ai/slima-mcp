@@ -107,6 +107,37 @@ function startFakeRails(state: FakeRailsState): Promise<{ server: HttpServer; ba
       return respond(res, 200, { data: book });
     }
 
+    // POST /api/v1/books/:token/mcp/files/visualize
+    if (
+      req.method === 'POST' &&
+      bookTokenMatch &&
+      bookTokenMatch[2] === 'mcp/files/visualize'
+    ) {
+      const body = (await readBody(req)) as { path?: string };
+      const filePath = body?.path ?? '';
+
+      if (!filePath.toLowerCase().endsWith('.map')) {
+        return respond(res, 400, {
+          error: {
+            code: 'UNSUPPORTED_RENDER_TYPE',
+            message: `Only .map files can be visualised (got: ${filePath}). Use files/read for everything else.`,
+          },
+        });
+      }
+
+      return respond(res, 200, {
+        data: {
+          file: { token: 'fl_map', name: 'relations.map', path: filePath, wordCount: 12 },
+          format: 'png',
+          // 1x1 PNG — the bytes do not matter, the transport of an image block does
+          image:
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+          summary: '# 關係圖：主線\n\n2 個人物、1 條關係、0 個群組。\n\n## 人物\n- 林小雨（id:a）',
+          stats: { nodes: 2, edges: 1, groups: 0, danglingEdges: 0 },
+        },
+      });
+    }
+
     // POST /api/v1/books/:token/mcp/files/create
     if (
       req.method === 'POST' &&
@@ -426,6 +457,52 @@ describe('MCP Protocol E2E — Script Studio Studio awareness', () => {
         expect(text).toMatch(/not available/i);
 
         expect(state.writeCalls.length).toBe(beforeWrites);
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+  describe('view_relationship_map over the real protocol', () => {
+    it('delivers the summary as text AND the render as an image content block', async () => {
+      const { client, cleanup } = await setupHarness(fakeRails.baseUrl);
+      try {
+        const result = await client.callTool({
+          name: 'view_relationship_map',
+          arguments: { book_token: 'bk_writing1', path: 'world/relations.map' },
+        });
+
+        const content = result.content as Array<{ type: string; text?: string; mimeType?: string; data?: string }>;
+
+        // Text first, always: several MCP clients drop image blocks before the
+        // model sees them (anthropics/claude-ai-mcp#238), so a picture-only
+        // reply would be an empty turn there.
+        expect(content[0].type).toBe('text');
+        expect(content[0].text).toContain('關係圖');
+
+        const image = content.find((c) => c.type === 'image');
+        expect(image?.mimeType).toBe('image/png');
+        // Survives the JSON-RPC round trip as valid base64 PNG magic.
+        expect(Buffer.from(image!.data!, 'base64').subarray(0, 4)).toEqual(
+          Buffer.from([0x89, 0x50, 0x4e, 0x47])
+        );
+        expect(result.isError).toBeFalsy();
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('surfaces the Rails UNSUPPORTED_RENDER_TYPE message rather than a generic failure', async () => {
+      const { client, cleanup } = await setupHarness(fakeRails.baseUrl);
+      try {
+        const result = await client.callTool({
+          name: 'view_relationship_map',
+          arguments: { book_token: 'bk_writing1', path: 'chapters/ch01.md' },
+        });
+
+        expect(result.isError).toBe(true);
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        expect(text).toContain('.map');
+        expect(text).toContain('files/read');
       } finally {
         await cleanup();
       }

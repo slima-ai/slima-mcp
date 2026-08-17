@@ -28,6 +28,7 @@ import {
   type McpFileDeleteResponse,
   type McpFileAppendResponse,
   type McpSearchResponse,
+  type McpFileVisualizeResponse,
 } from './types.js';
 import {
   SlimaApiError,
@@ -400,6 +401,21 @@ export class SlimaApiClient {
         content: params.content,
         commit_message: params.commitMessage,
       }
+    );
+  }
+
+  /**
+   * Render a structured file (today: .map relationship graphs) as an image
+   * plus a text summary.
+   */
+  async visualizeFile(
+    bookToken: string,
+    path: string
+  ): Promise<McpFileVisualizeResponse> {
+    return this.request<McpFileVisualizeResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/visualize`,
+      { path }
     );
   }
 

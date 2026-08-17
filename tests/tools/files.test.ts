@@ -41,12 +41,12 @@ describe('File Tools', () => {
       }).not.toThrow();
     });
 
-    it('should register all 7 file-related tools', () => {
+    it('should register all 8 file-related tools', () => {
       const toolSpy = vi.spyOn(server, 'tool');
 
       registerFileTools(server, mockClient as unknown as SlimaApiClient);
 
-      expect(toolSpy).toHaveBeenCalledTimes(7);
+      expect(toolSpy).toHaveBeenCalledTimes(8);
 
       const toolNames = toolSpy.mock.calls.map((call) => call[0]);
       expect(toolNames).toContain('read_file');
@@ -56,6 +56,7 @@ describe('File Tools', () => {
       expect(toolNames).toContain('delete_file');
       expect(toolNames).toContain('append_to_file');
       expect(toolNames).toContain('search_content');
+      expect(toolNames).toContain('view_relationship_map');
     });
 
     it('should register read_file with correct parameters', () => {

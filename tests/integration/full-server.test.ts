@@ -35,8 +35,8 @@ describe('Integration: Full Server Setup', () => {
       registerBetaReaderTools(server, mockClient);
       registerFileTools(server, mockClient);
 
-      // Expected total: 5 (books) + 1 (content) + 2 (beta-reader) + 7 (files) = 15
-      expect(toolSpy).toHaveBeenCalledTimes(15);
+      // Expected total: 5 (books) + 1 (content) + 2 (beta-reader) + 8 (files) = 16
+      expect(toolSpy).toHaveBeenCalledTimes(16);
     });
 
     it('should have all expected tool names', () => {
@@ -71,6 +71,7 @@ describe('Integration: Full Server Setup', () => {
       expect(toolNames).toContain('delete_file');
       expect(toolNames).toContain('append_to_file');
       expect(toolNames).toContain('search_content');
+      expect(toolNames).toContain('view_relationship_map');
     });
   });
 

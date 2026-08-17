@@ -260,6 +260,29 @@ export interface McpFileReadResponse {
   content: string;
 }
 
+export interface McpFileVisualizeResponse {
+  file: McpFile;
+  /** 'png' when an image was produced, 'none' when only the summary is available */
+  format: 'png' | 'none';
+  /** base64 PNG; absent when format === 'none' */
+  image?: string;
+  /** Always present for a successful render — the part every client can use */
+  summary?: string;
+  stats?: {
+    nodes: number;
+    edges: number;
+    groups: number;
+    danglingEdges?: number;
+  };
+  imageUnavailable?: boolean;
+  imageError?: string;
+  /** Confidential team skill withheld from a non-manager (Phase KP) */
+  contentWithheld?: boolean;
+  withheldReason?: string;
+  throttled?: boolean;
+  throttledReason?: string;
+}
+
 export interface McpFileCreateResponse {
   commit: Commit;
   fileToken: string;
