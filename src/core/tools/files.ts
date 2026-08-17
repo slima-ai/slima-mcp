@@ -141,78 +141,44 @@ ${AI_READONLY_WARNING}`,
   // === edit_file ===
   server.tool(
     'edit_file',
-    `Edit a file by replacing a specific text segment (search and replace). Use this for precise edits instead of rewriting the entire file.
+    `Replace a specific text segment in a file (search and replace). Use this for precise edits instead of rewriting the whole file.
+
+The replacement is performed by the server inside a lock, so the reported count is what was actually written — not a local guess. If the text is missing or ambiguous the call fails with a message telling you what to do next; act on it rather than retrying the same arguments.
 ${SCRIPT_STUDIO_WRITE_WARNING}
 ${AI_READONLY_WARNING}`,
     {
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       path: z.string().describe(PATH_PARAM_HINT),
       old_string: z.string().describe('The exact text to find and replace (must match exactly, including whitespace)'),
-      new_string: z.string().describe('The new text to replace it with'),
-      replace_all: z.boolean().optional().describe('Replace all occurrences (default: false, replaces only first match)'),
+      new_string: z.string().describe('The new text to replace it with (pass an empty string to delete)'),
+      replace_all: z.boolean().optional().describe('Replace all occurrences (default: false, replaces only the first match)'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
     { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     async ({ book_token, path, old_string, new_string, replace_all, commit_message }) => {
       try {
-        // 1. Read current content
-        const fileData = await client.readFile(book_token, path);
-        const currentContent = fileData.content || '';
-
-        // 2. Check if old_string exists
-        if (!currentContent.includes(old_string)) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Edit failed: Could not find the specified text in the file.\n\n**Looking for:**\n\`\`\`\n${old_string.slice(0, 200)}${old_string.length > 200 ? '...' : ''}\n\`\`\`\n\n**Tip:** Make sure the text matches exactly, including whitespace and line breaks.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // 3. Check for uniqueness (if not replace_all)
-        if (!replace_all) {
-          const occurrences = currentContent.split(old_string).length - 1;
-          if (occurrences > 1) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `❌ Edit failed: Found ${occurrences} occurrences of the text. Please provide a more specific/longer text segment to ensure a unique match, or set replace_all: true to replace all occurrences.`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        }
-
-        // 4. Perform replacement
-        const newContent = replace_all
-          ? currentContent.split(old_string).join(new_string)
-          : currentContent.replace(old_string, new_string);
-
-        // 5. Write back
-        const result = await client.updateFile(book_token, {
+        // Delegates outright: no read-then-write here. A local read-modify-write
+        // cannot see a concurrent write, which is how two edits used to clobber
+        // each other while both reported success (iss_gkqwnovhajzl7xvz).
+        const result = await client.editFile(book_token, {
           path,
-          content: newContent,
-          commitMessage: commit_message || `Edit ${path}`,
+          oldString: old_string,
+          newString: new_string,
+          replaceAll: replace_all,
+          commitMessage: commit_message,
         });
-
-        const replacementCount = replace_all
-          ? currentContent.split(old_string).length - 1
-          : 1;
 
         return {
           content: [
             {
               type: 'text',
-              text: `✅ File edited successfully.\n\n**Replacements:** ${replacementCount}\n**Commit:** ${result.commit.token}\n**Message:** ${result.commit.name || result.commit.message}`,
+              text: `✅ File edited.\n\n**Replacements applied by the server:** ${result.replacements}\n**Commit:** ${result.commit.token}\n**Message:** ${result.commit.name || result.commit.message}`,
             },
           ],
         };
       } catch (error) {
+        // Rails' edit errors are already written for an AI reader (what went
+        // wrong AND what to do next), so pass them through verbatim.
         return {
           content: [{ type: 'text', text: formatErrorForMcp(error) }],
           isError: true,

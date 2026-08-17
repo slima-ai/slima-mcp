@@ -38,6 +38,7 @@ describe('File Tools Handlers', () => {
       updateFile: vi.fn(),
       deleteFile: vi.fn(),
       appendToFile: vi.fn(),
+      editFile: vi.fn(),
       searchFiles: vi.fn(),
     };
 
@@ -138,13 +139,16 @@ describe('File Tools Handlers', () => {
   });
 
   describe('edit_file handler', () => {
-    it('should successfully edit file with search and replace', async () => {
-      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
-        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
-        content: 'The quick brown fox jumps over the lazy dog.',
-      });
-      (mockClient.updateFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+    // The search-and-replace itself lives in Rails now (POST /mcp/files/edit).
+    // These previously asserted the LOCAL read-modify-write — i.e. they pinned
+    // the bug as spec: they proved the tool computed a replacement count and
+    // blind-wrote the whole file back, which is exactly what made two concurrent
+    // edits clobber each other while both reported success
+    // (iss_gkqwnovhajzl7xvz). Rewritten against the delegation contract.
+    it('sends the edit to the server and reports the count the server applied', async () => {
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockResolvedValue({
         commit: { token: 'cmt_edit123', name: 'Edit chapter-01.md' },
+        replacements: 1,
       });
 
       const handler = handlers.get('edit_file')!;
@@ -155,22 +159,27 @@ describe('File Tools Handlers', () => {
         new_string: 'red fox',
       });
 
-      expect(mockClient.updateFile).toHaveBeenCalledWith('bk_test', {
+      expect(mockClient.editFile).toHaveBeenCalledWith('bk_test', {
         path: 'chapter-01.md',
-        content: 'The quick red fox jumps over the lazy dog.',
-        commitMessage: 'Edit chapter-01.md',
+        oldString: 'brown fox',
+        newString: 'red fox',
+        replaceAll: undefined,
+        commitMessage: undefined,
       });
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
-      expect(content[0].text).toContain('✅ File edited successfully');
+      expect(content[0].text).toContain('✅ File edited');
       expect(content[0].text).toContain('cmt_edit123');
     });
 
-    it('should fail when old_string not found', async () => {
-      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
-        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
-        content: 'Hello world',
-      });
+    it('surfaces the server\'s not-found message verbatim', async () => {
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new SlimaApiError(
+          422,
+          'EDIT_STRING_NOT_FOUND',
+          'Could not find the specified text in chapter-01.md. If you read this file earlier, read it again — another write may have changed it since.'
+        )
+      );
 
       const handler = handlers.get('edit_file')!;
       const result = await handler({
@@ -183,13 +192,18 @@ describe('File Tools Handlers', () => {
       expect(result).toHaveProperty('isError', true);
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content[0].text).toContain('Could not find the specified text');
+      // The "read it again" hint is the actionable half — it must survive.
+      expect(content[0].text).toContain('read it again');
     });
 
-    it('should fail when multiple matches found (without replace_all)', async () => {
-      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
-        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
-        content: 'The cat sat on the mat. The cat was happy.',
-      });
+    it('surfaces the server\'s ambiguity message verbatim', async () => {
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new SlimaApiError(
+          422,
+          'EDIT_STRING_AMBIGUOUS',
+          'Found 2 occurrences of the text in chapter-01.md. Provide a longer, unique segment or set replace_all.'
+        )
+      );
 
       const handler = handlers.get('edit_file')!;
       const result = await handler({
@@ -202,15 +216,13 @@ describe('File Tools Handlers', () => {
       expect(result).toHaveProperty('isError', true);
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content[0].text).toContain('2 occurrences');
+      expect(content[0].text).toContain('replace_all');
     });
 
-    it('should replace all occurrences when replace_all is true', async () => {
-      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
-        file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
-        content: 'The cat sat on the mat. The cat was happy.',
-      });
-      (mockClient.updateFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+    it('forwards replace_all rather than deciding locally', async () => {
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockResolvedValue({
         commit: { token: 'cmt_edit456', name: 'Edit chapter-01.md' },
+        replacements: 2,
       });
 
       const handler = handlers.get('edit_file')!;
@@ -222,18 +234,17 @@ describe('File Tools Handlers', () => {
         replace_all: true,
       });
 
-      expect(mockClient.updateFile).toHaveBeenCalledWith('bk_test', {
-        path: 'chapter-01.md',
-        content: 'The dog sat on the mat. The dog was happy.',
-        commitMessage: 'Edit chapter-01.md',
-      });
+      expect(mockClient.editFile).toHaveBeenCalledWith(
+        'bk_test',
+        expect.objectContaining({ replaceAll: true })
+      );
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
-      expect(content[0].text).toContain('Replacements:** 2');
+      expect(content[0].text).toContain('2');
     });
 
     it('should handle file not found error', async () => {
-      (mockClient.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockRejectedValue(
         new NotFoundError('File not found')
       );
 

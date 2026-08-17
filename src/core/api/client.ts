@@ -25,6 +25,7 @@ import {
   type McpFileReadResponse,
   type McpFileCreateResponse,
   type McpFileUpdateResponse,
+  type McpFileEditResponse,
   type McpFileDeleteResponse,
   type McpFileAppendResponse,
   type McpSearchResponse,
@@ -364,6 +365,37 @@ export class SlimaApiClient {
       {
         path: params.path,
         content: params.content,
+        commit_message: params.commitMessage,
+      }
+    );
+  }
+
+  /**
+   * Search-and-replace inside a file, applied SERVER-side.
+   *
+   * The old client-side read-modify-write reported a replacement count this
+   * process computed and blind-wrote the whole file back, so concurrent edits
+   * silently clobbered each other while both callers saw a success
+   * (iss_gkqwnovhajzl7xvz). Rails re-reads inside its branch lock.
+   */
+  async editFile(
+    bookToken: string,
+    params: {
+      path: string;
+      oldString: string;
+      newString: string;
+      replaceAll?: boolean;
+      commitMessage?: string;
+    }
+  ): Promise<McpFileEditResponse> {
+    return this.request<McpFileEditResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/edit`,
+      {
+        path: params.path,
+        old_string: params.oldString,
+        new_string: params.newString,
+        replace_all: params.replaceAll,
         commit_message: params.commitMessage,
       }
     );

@@ -292,6 +292,12 @@ export interface McpFileUpdateResponse {
   commit: Commit;
 }
 
+export interface McpFileEditResponse {
+  commit: Commit;
+  /** How many replacements the SERVER actually applied (never a local guess) */
+  replacements: number;
+}
+
 export interface McpFileDeleteResponse {
   commit: Commit;
 }

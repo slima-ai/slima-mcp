@@ -11,7 +11,7 @@ import { registerBookTools } from '../../src/tools/books.js';
 import { registerContentTools } from '../../src/tools/content.js';
 import { registerBetaReaderTools } from '../../src/tools/beta-reader.js';
 import { registerFileTools } from '../../src/tools/files.js';
-import { NotFoundError, AuthenticationError, InsufficientCreditsError } from '../../src/utils/errors.js';
+import { NotFoundError, AuthenticationError, InsufficientCreditsError, SlimaApiError } from '../../src/utils/errors.js';
 
 type ToolHandler = (params: Record<string, unknown>) => Promise<{
   content: Array<{ type: string; text: string }>;
@@ -134,6 +134,7 @@ describe('Use Case: Daily Writing Workflow', () => {
       readFile: vi.fn(),
       updateFile: vi.fn(),
       appendToFile: vi.fn(),
+      editFile: vi.fn(),
       getBook: vi.fn(),
       listCommits: vi.fn(),
     };
@@ -157,13 +158,12 @@ describe('Use Case: Daily Writing Workflow', () => {
     expect(readResult.content[0].text).toContain('第一章');
     expect(readResult.content[0].text).toContain('500');
 
-    // Step 2: Edit a specific part (fix typo or revise)
-    (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
-      file: { name: 'chapter-01.md', path: 'chapters/chapter-01.md', wordCount: 500 },
-      content: '# 第一章\n\n小明走在街上，天空下著雨。他想著今天發生的事...',
-    });
-    (mockClient.updateFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+    // Step 2: Edit a specific part (fix typo or revise).
+    // The replacement happens server-side; this process no longer re-reads the
+    // file first, so there is no stale-read window between steps.
+    (mockClient.editFile as ReturnType<typeof vi.fn>).mockResolvedValue({
       commit: { token: 'cmt_edit1', name: 'Edit chapter' },
+      replacements: 1,
     });
 
     const editResult = await handlers.get('edit_file')!({
@@ -173,7 +173,8 @@ describe('Use Case: Daily Writing Workflow', () => {
       new_string: '天空飄著細雨',
     });
 
-    expect(editResult.content[0].text).toContain('edited successfully');
+    expect(editResult.content[0].text).toContain('File edited');
+    expect(editResult.content[0].text).toContain('cmt_edit1');
 
     // Step 3: Append new content
     (mockClient.appendToFile as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -473,6 +474,7 @@ describe('Use Case: Error Handling', () => {
         updatedAt: '',
       }),
       readFile: vi.fn(),
+      editFile: vi.fn(),
       createReaderTest: vi.fn(),
       getReaderTestProgress: vi.fn(),
       getReaderTest: vi.fn(),
@@ -561,10 +563,15 @@ describe('Use Case: Error Handling', () => {
   });
 
   it('should provide helpful error when edit target not found', async () => {
-    (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
-      file: { name: 'chapter-01.md', path: 'chapter-01.md', wordCount: 100 },
-      content: 'Hello world',
-    });
+    // Rails decides this now, and its message carries the actionable half
+    // ("read it again") — the tool's job is to not swallow it.
+    (mockClient.editFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new SlimaApiError(
+        422,
+        'EDIT_STRING_NOT_FOUND',
+        'Could not find the specified text in chapter-01.md. If you read this file earlier, read it again — another write may have changed it since.'
+      )
+    );
 
     const result = await handlers.get('edit_file')!({
       book_token: 'bk_test',
@@ -575,7 +582,7 @@ describe('Use Case: Error Handling', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('Could not find');
-    expect(result.content[0].text).toContain('Tip');
+    expect(result.content[0].text).toContain('read it again');
   });
 });
 
