@@ -82,6 +82,20 @@ describe('list_books pagination honesty', () => {
     expect(schemas.get('list_books')).toHaveProperty('page');
   });
 
+  // Found in review: the "more pages" decision compared the grand total against
+  // the CURRENT page's length, so the last page (37 of 137) still told the AI to
+  // fetch a page that does not exist.
+  it('does not send the AI after a page that does not exist', async () => {
+    (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue(
+      page(37, { total: 137, page: 2, perPage: 100, totalPages: 2 })
+    );
+
+    const text = (await list({ page: 2 })).content[0].text;
+
+    expect(text).not.toMatch(/page: 3/);
+    expect(text).toContain('137');
+  });
+
   it('stays quiet about pagination when everything fits', async () => {
     (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue(
       page(3, { total: 3, page: 1, perPage: 100, totalPages: 1 })

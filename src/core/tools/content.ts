@@ -47,10 +47,13 @@ export function registerContentTools(
       }
 
       try {
-        const resolvedPath = await resolvePathFromStructure(client, book_token, normalized);
+        // One listCommits for both the resolution AND the not-found hint: the
+        // hint used to re-fetch the identical snapshot, doubling the cost of the
+        // exact case (a miss) that is already the slow path.
+        const { resolvedPath, availablePaths } = await resolveFromStructure(client, book_token, normalized);
 
         if (!resolvedPath) {
-          const available = await listAvailablePaths(client, book_token);
+          const available = availablePaths;
           const hint = available.length
             ? `\n\nAvailable files:\n- ${available.slice(0, 10).join('\n- ')}${available.length > 10 ? `\n... and ${available.length - 10} more` : ''}`
             : '';
@@ -105,15 +108,16 @@ function flatten(files: FileSnapshot[]): FileSnapshot[] {
 
 /**
  * Resolve a loose reference (bare filename, partial path, case-insensitive) to
- * one real path. Returns null when nothing matches.
+ * one real path, AND return every available path for the not-found hint — both
+ * from a single snapshot fetch.
  */
-async function resolvePathFromStructure(
+async function resolveFromStructure(
   client: SlimaApiClient,
   bookToken: string,
   needle: string
-): Promise<string | null> {
+): Promise<{ resolvedPath: string | null; availablePaths: string[] }> {
   const commits = await client.listCommits(bookToken, 1);
-  if (commits.length === 0) return null;
+  if (commits.length === 0) return { resolvedPath: null, availablePaths: [] };
 
   const entries = flatten((commits[0].filesSnapshot ?? []) as FileSnapshot[]);
   const byToken = new Map(entries.map((e) => [e.token, e]));
@@ -132,131 +136,11 @@ async function resolvePathFromStructure(
     candidates.find((e) => fullPathOf(e, byToken).toLowerCase().endsWith(`/${wanted}`)) ??
     candidates.find((e) => stripExt(e.name.toLowerCase()) === stripExt(wanted));
 
-  return match ? fullPathOf(match, byToken) : null;
+  return {
+    resolvedPath: match ? fullPathOf(match, byToken) : null,
+    availablePaths: candidates.map((e) => fullPathOf(e, byToken)),
+  };
 }
 
-async function listAvailablePaths(client: SlimaApiClient, bookToken: string): Promise<string[]> {
-  try {
-    const commits = await client.listCommits(bookToken, 1);
-    if (commits.length === 0) return [];
-    const entries = flatten((commits[0].filesSnapshot ?? []) as FileSnapshot[]);
-    const byToken = new Map(entries.map((e) => [e.token, e]));
-    return entries.filter((e) => e.kind !== 'folder').map((e) => fullPathOf(e, byToken));
-  } catch {
-    return [];
-  }
-}
 
-/**
- * Find file in snapshot
- * Supports multiple path formats:
- * - Full path: /chapters/01.md
- * - Relative path: chapters/01.md
- * - Filename: 01.md
- * - Token: chapter-01
- */
-function findFileInSnapshot(
-  files: FileSnapshot[],
-  path: string
-): FileSnapshot | null {
-  // Normalize path
-  const normalizedPath = path.replace(/^\//, '').toLowerCase();
-  const pathParts = normalizedPath.split('/');
 
-  // Recursive search
-  function search(
-    items: FileSnapshot[],
-    remainingParts: string[]
-  ): FileSnapshot | null {
-    for (const item of items) {
-      const itemNameLower = item.name.toLowerCase();
-      const itemTokenLower = item.token.toLowerCase();
-
-      // Full path match
-      if (remainingParts.length === 1) {
-        const target = remainingParts[0];
-        if (
-          itemNameLower === target ||
-          itemTokenLower === target ||
-          itemNameLower.replace(/\.[^.]+$/, '') === target.replace(/\.[^.]+$/, '')
-        ) {
-          return item;
-        }
-      }
-
-      // Folder match, continue searching
-      if (item.kind === 'folder' && item.children) {
-        if (
-          itemNameLower === remainingParts[0] ||
-          itemTokenLower === remainingParts[0]
-        ) {
-          const result = search(item.children, remainingParts.slice(1));
-          if (result) return result;
-        }
-
-        // Also try searching in subfolders directly
-        const result = search(item.children, remainingParts);
-        if (result) return result;
-      }
-    }
-
-    return null;
-  }
-
-  // Try full path first
-  let result = search(files, pathParts);
-  if (result) return result;
-
-  // Then try searching by filename only
-  result = searchByName(files, pathParts[pathParts.length - 1]);
-  return result;
-}
-
-/**
- * Search by filename only
- */
-function searchByName(
-  files: FileSnapshot[],
-  name: string
-): FileSnapshot | null {
-  const nameLower = name.toLowerCase();
-
-  for (const item of files) {
-    const itemNameLower = item.name.toLowerCase();
-    const itemTokenLower = item.token.toLowerCase();
-
-    if (
-      itemNameLower === nameLower ||
-      itemTokenLower === nameLower ||
-      itemNameLower.replace(/\.[^.]+$/, '') === nameLower.replace(/\.[^.]+$/, '')
-    ) {
-      return item;
-    }
-
-    if (item.kind === 'folder' && item.children) {
-      const result = searchByName(item.children, name);
-      if (result) return result;
-    }
-  }
-
-  return null;
-}
-
-/**
- * List all file paths
- */
-function listAllFiles(files: FileSnapshot[], prefix = ''): string[] {
-  const result: string[] = [];
-
-  for (const item of files) {
-    const path = prefix ? `${prefix}/${item.name}` : item.name;
-
-    if (item.kind === 'file') {
-      result.push(path);
-    } else if (item.children) {
-      result.push(...listAllFiles(item.children, path));
-    }
-  }
-
-  return result;
-}

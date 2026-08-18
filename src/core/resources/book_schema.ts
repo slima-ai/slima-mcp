@@ -14,6 +14,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
 import type { Book } from '../api/types.js';
+import {
+  AI_READONLY_EXTENSIONS,
+  AI_STRUCTURED_VIEWERS,
+  AI_WRITABLE_EXTENSIONS,
+} from '../ai-file-policy.js';
 
 const BOOK_SCHEMA_URI_TEMPLATE = 'slima://books/{book_token}/schema';
 
@@ -107,25 +112,13 @@ export function buildBookSchema(book: Book): Record<string, unknown> {
     // Applies to BOTH studio types; the Script Studio path allowlist above is a
     // separate, additional restriction.
     ai_file_policy: {
-      writable: ['.md', '.markdown', '.txt'],
-      readonly: [
-        '.map',
-        '.geomap',
-        '.script',
-        '.timeline',
-        '.character',
-        '.location',
-        '.json',
-        '.yaml',
-        '.yml',
-      ],
+      writable: [...AI_WRITABLE_EXTENSIONS],
+      readonly: [...AI_READONLY_EXTENSIONS],
       readonly_note:
         'Read-only means the AI must not write these via write_file / edit_file / create_file / ' +
         'append_to_file / delete_file. Slima owns their structure; overwriting one corrupts it for the ' +
         'author. Recommend changes in words and point the author at that file type\'s editor.',
-      viewers: {
-        '.map': 'view_relationship_map — renders the graph as an image plus a cast/relationship summary',
-      },
+      viewers: AI_STRUCTURED_VIEWERS,
     },
     structured_file_types: isScript
       ? {

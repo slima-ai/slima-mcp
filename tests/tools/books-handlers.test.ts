@@ -276,5 +276,17 @@ describe('Book Tools Handlers', () => {
 
       expect(result).toHaveProperty('isError', true);
     });
+
+    // The description carries the instruction the output cannot: an AI that has
+    // commit history in front of it will happily compute a delta unless told not
+    // to. Pinned here because a silent edit dropping it is invisible otherwise.
+    it('warns in its description against deriving progress from commits', () => {
+      const server = new McpServer({ name: 'test', version: '1.0.0' });
+      const spy = vi.spyOn(server, 'tool');
+      registerBookTools(server, mockClient as unknown as SlimaApiClient);
+
+      const call = spy.mock.calls.find((c) => c[0] === 'get_writing_stats');
+      expect(call?.[1]).toMatch(/do not|never/i);
+    });
   });
 });

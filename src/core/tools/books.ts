@@ -114,10 +114,17 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
         // Never present a page as the whole library (CLAUDE.md Gotcha #12: a
         // silent truncation reads as "that book does not exist"). Rails caps an
         // un-paginated /books at 100 and reports the real total in meta.
-        const total = meta.total;
-        const header =
-          total !== undefined && total > books.length
-            ? `Showing ${books.length} of ${total} book(s) — page ${meta.page ?? 1} of ${meta.totalPages ?? '?'}. Call list_books again with \`page: ${(meta.page ?? 1) + 1}\` for the rest.`
+        //
+        // "Are there more?" is meta.page < meta.totalPages — NOT total >
+        // books.length. The latter is also true on the LAST page (37 of 137),
+        // where it sent the AI to fetch a page 3 that does not exist.
+        const currentPage = meta.page ?? 1;
+        const totalPages = meta.totalPages;
+        const hasMore = totalPages !== undefined && currentPage < totalPages;
+        const header = hasMore
+          ? `Showing ${books.length} of ${meta.total} book(s) — page ${currentPage} of ${totalPages}. Call list_books again with \`page: ${currentPage + 1}\` for the rest.`
+          : meta.total !== undefined && meta.total > books.length
+            ? `Showing ${books.length} of ${meta.total} book(s) — page ${currentPage} of ${totalPages ?? '?'} (this is the last page).`
             : `Found ${books.length} book(s):`;
 
         return {

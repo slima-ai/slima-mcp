@@ -243,6 +243,42 @@ describe('File Tools Handlers', () => {
       expect(content[0].text).toContain('2');
     });
 
+    // The load-bearing assertion of the whole rewrite: a reintroduced local
+    // read-modify-write would satisfy every other example in this block.
+    it('never reads-then-writes locally', async () => {
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        commit: { token: 'cmt_1' },
+        replacements: 1,
+      });
+
+      await handlers.get('edit_file')!({
+        book_token: 'bk_test',
+        path: 'chapter-01.md',
+        old_string: 'a',
+        new_string: 'b',
+      });
+
+      expect(mockClient.readFile).not.toHaveBeenCalled();
+      expect(mockClient.updateFile).not.toHaveBeenCalled();
+    });
+
+    it('surfaces INVALID_EDIT_ARGUMENTS verbatim', async () => {
+      (mockClient.editFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new SlimaApiError(400, 'INVALID_EDIT_ARGUMENTS', 'new_string is required (pass an empty string to delete)')
+      );
+
+      const result = await handlers.get('edit_file')!({
+        book_token: 'bk_test',
+        path: 'chapter-01.md',
+        old_string: 'a',
+        new_string: 'b',
+      });
+
+      expect(result).toHaveProperty('isError', true);
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('pass an empty string to delete');
+    });
+
     it('should handle file not found error', async () => {
       (mockClient.editFile as ReturnType<typeof vi.fn>).mockRejectedValue(
         new NotFoundError('File not found')

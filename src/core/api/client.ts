@@ -104,7 +104,8 @@ export class SlimaApiClient {
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    options: { envelope?: boolean } = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const token = await this.getToken();
@@ -131,36 +132,26 @@ export class SlimaApiClient {
     }
 
     const json = (await response.json()) as ApiResponse<T>;
-    return json.data;
+    // `envelope` keeps meta (pagination totals); the default unwraps to `data`.
+    return (options.envelope ? json : json.data) as T;
   }
 
   /**
    * Like #request but keeps the whole envelope. Paginated endpoints carry the
    * real total in `meta`, and dropping it is how `list_books` came to report a
    * capped page as if it were the whole library.
+   *
+   * Delegates to #request rather than re-implementing fetch/auth/error handling:
+   * the first version copied those ~20 lines and had already lost request()'s
+   * debug log, so list_books was the one call invisible at debug level.
    */
   private async requestWithMeta<T>(
     method: string,
     path: string
   ): Promise<{ data: T; meta?: PaginationMeta }> {
-    const url = `${this.baseUrl}${path}`;
-    const token = await this.getToken();
-
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': `slima-mcp-server/${__VERSION__}`,
-      },
+    return this.request<{ data: T; meta?: PaginationMeta }>(method, path, undefined, {
+      envelope: true,
     });
-
-    this.handleUpgradeHint(response);
-    if (!response.ok) {
-      await this.handleErrorResponse(response);
-    }
-
-    return (await response.json()) as { data: T; meta?: PaginationMeta };
   }
 
   /**
