@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
 import { formatErrorForMcp } from '../utils/errors.js';
+import { renderFileRead } from './file-read-rendering.js';
 
 // Studio-aware write rules shown on every write tool description + path param.
 // Rails (`Mcp::FileOperationService#validate_studio_write_path!`) enforces this
@@ -91,70 +92,8 @@ export function registerFileTools(
       try {
         const result = await client.readFile(book_token, path);
 
-        // Withheld / throttled are NOT errors and NOT empty files — they are
-        // "the server deliberately did not give you this". Saying anything else
-        // sends the model off to fix a file it is not allowed to touch.
-        if (result.contentWithheld) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: [
-                  `# ${result.file.name} 🔒`,
-                  '',
-                  `**Path:** ${result.file.path}`,
-                  `**Words:** ${result.file.wordCount}`,
-                  '',
-                  '---',
-                  '',
-                  `The content of this file is withheld from you (reason: ${result.withheldReason ?? 'confidential'}).`,
-                  'It is a confidential team skill: your team allows it to be USED but not READ,',
-                  'so Slima applies it on the server without showing you the source.',
-                  '',
-                  'This is intentional, not an error and not an empty file. Do not try to rewrite,',
-                  'restore or "fix" it — writes to this path are rejected. If you need its contents,',
-                  'ask a team manager.',
-                ].join('\n'),
-              },
-            ],
-          };
-        }
-
-        if (result.throttled) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: [
-                  `# ${result.file.name} ⏳`,
-                  '',
-                  `**Path:** ${result.file.path}`,
-                  `**Words:** ${result.file.wordCount}`,
-                  '',
-                  '---',
-                  '',
-                  `This team skill's read budget is exhausted for now (${result.throttledReason ?? 'daily_read_limit'}).`,
-                  'The file is not empty — try again later, or ask a team manager.',
-                ].join('\n'),
-              },
-            ],
-          };
-        }
-
-        const fileInfo = [
-          `# ${result.file.name}`,
-          '',
-          `**Path:** ${result.file.path}`,
-          `**Words:** ${result.file.wordCount}`,
-          `**Type:** ${result.file.fileType || 'unknown'}`,
-          '',
-          '---',
-          '',
-          result.content || '(empty file)',
-        ].join('\n');
-
         return {
-          content: [{ type: 'text', text: fileInfo }],
+          content: [{ type: 'text', text: renderFileRead(result) }],
         };
       } catch (error) {
         return {

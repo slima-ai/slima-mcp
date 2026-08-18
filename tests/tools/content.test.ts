@@ -1,271 +1,153 @@
 /**
- * Content Tools Tests
+ * get_chapter — reading is delegated to Rails' /mcp/files/read.
+ *
+ * This file previously tested a second, independent reading implementation
+ * (list commits → walk the snapshot → download the blob by hash). That path
+ * bypassed the team-skill audit trail and daily read budget, could not see
+ * `contentWithheld` / `throttled`, and needed two endpoints a narrowly-scoped
+ * mcp:books token cannot reach — so the tests were pinning a shortcut around
+ * the server's own rules.
+ *
+ * What survives is the part that was genuinely useful: resolving a loose
+ * reference (bare filename, token, missing extension) to one real path. That
+ * now decides *which* file to ask for, and the read itself still goes through
+ * the audited endpoint.
  */
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SlimaApiClient } from '../../src/api/client.js';
 import { registerContentTools } from '../../src/tools/content.js';
+import { NotFoundError, SlimaApiError } from '../../src/utils/errors.js';
+
+type Handler = (params: Record<string, unknown>) => Promise<{
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+}>;
+
+const SNAPSHOT = [
+  { token: 'fl_folder', name: 'chapters', kind: 'folder', position: 0 },
+  {
+    token: 'fl_ch1',
+    name: '01-introduction.md',
+    kind: 'file',
+    parentToken: 'fl_folder',
+    position: 0,
+    blobHash: 'sha256:abc',
+    wordCount: 500,
+  },
+];
 
 describe('Content Tools', () => {
   let server: McpServer;
-  let mockClient: {
-    listCommits: ReturnType<typeof vi.fn>;
-    downloadBlobs: ReturnType<typeof vi.fn>;
-  };
-  let toolHandlers: Map<string, Function>;
+  let mockClient: Partial<SlimaApiClient>;
+  let handlers: Map<string, Handler>;
 
   beforeEach(() => {
-    server = new McpServer({
-      name: 'test',
-      version: '1.0.0',
+    server = new McpServer({ name: 'test', version: '1.0.0' });
+    mockClient = { readFile: vi.fn(), listCommits: vi.fn(), downloadBlobs: vi.fn() };
+    handlers = new Map();
+    vi.spyOn(server, 'tool').mockImplementation((...args: unknown[]) => {
+      handlers.set(args[0] as string, args[args.length - 1] as Handler);
+      return server;
     });
+    registerContentTools(server, mockClient as SlimaApiClient);
+  });
 
-    mockClient = {
-      listCommits: vi.fn(),
-      downloadBlobs: vi.fn(),
-    };
+  const get = (file_path: string) => handlers.get('get_chapter')!({ book_token: 'bk_test', file_path });
 
-    // Capture tool handlers
-    toolHandlers = new Map();
-    vi.spyOn(server, 'tool').mockImplementation(
-      (...args: unknown[]) => {
-        const name = args[0] as string;
-        const handler = args[args.length - 1] as Function;
-        toolHandlers.set(name, handler);
-        return server;
-      }
-    );
-
-    registerContentTools(server, mockClient as unknown as SlimaApiClient);
+  const readOk = (path: string, content: string) => ({
+    file: { name: path.split('/').pop(), path, wordCount: 500, fileType: 'md' },
+    content,
   });
 
   describe('registerContentTools', () => {
-    it('should register get_chapter tool', () => {
-      expect(toolHandlers.has('get_chapter')).toBe(true);
+    it('registers get_chapter', () => {
+      expect(handlers.has('get_chapter')).toBe(true);
     });
   });
 
-  describe('get_chapter handler', () => {
-    const mockFilesSnapshot = [
-      {
-        token: 'chapters',
-        name: 'Chapters',
-        kind: 'folder',
-        position: 0,
-        children: [
-          {
-            token: 'ch01',
-            name: '01-introduction.md',
-            kind: 'file',
-            position: 0,
-            blobHash: 'sha256:abc123',
-            wordCount: 500,
-          },
-          {
-            token: 'ch02',
-            name: '02-beginning.md',
-            kind: 'file',
-            position: 1,
-            blobHash: 'sha256:def456',
-            wordCount: 800,
-          },
-        ],
-      },
-      {
-        token: 'notes',
-        name: 'notes.md',
-        kind: 'file',
-        position: 1,
-        blobHash: 'sha256:notes',
-        wordCount: 100,
-      },
-    ];
+  describe('reading by exact path', () => {
+    it('returns the content without touching commits or blobs', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(
+        readOk('chapters/01-introduction.md', '# Introduction\n\nHello.')
+      );
 
-    it('should return chapter content successfully', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([
-        { hash: 'sha256:abc123', content: 'Chapter 1 content here.' },
-      ]);
+      const result = await get('chapters/01-introduction.md');
 
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: '01-introduction.md',
-      });
-
-      expect(result.content[0].text).toContain('01-introduction.md');
-      expect(result.content[0].text).toContain('500 words');
-      expect(result.content[0].text).toContain('Chapter 1 content here.');
-      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain('Introduction');
+      expect(mockClient.listCommits).not.toHaveBeenCalled();
+      expect(mockClient.downloadBlobs).not.toHaveBeenCalled();
     });
 
-    it('should find file by full path', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([
-        { hash: 'sha256:abc123', content: 'Content' },
-      ]);
+    it('accepts a leading slash', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(
+        readOk('chapters/01-introduction.md', 'body')
+      );
 
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: '/Chapters/01-introduction.md',
-      });
+      await get('/chapters/01-introduction.md');
 
-      expect(result.isError).toBeUndefined();
-      expect(mockClient.downloadBlobs).toHaveBeenCalledWith('bk_test', ['sha256:abc123']);
+      expect(mockClient.readFile).toHaveBeenCalledWith('bk_test', 'chapters/01-introduction.md');
+    });
+  });
+
+  describe('resolving a loose reference', () => {
+    beforeEach(() => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(new NotFoundError('File not found'))
+        .mockResolvedValueOnce(readOk('chapters/01-introduction.md', 'resolved'));
+      (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { token: 'cmt_1', filesSnapshot: SNAPSHOT },
+      ]);
     });
 
-    it('should find file by token', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([
-        { hash: 'sha256:abc123', content: 'Content' },
-      ]);
+    it.each([
+      ['bare filename', '01-introduction.md'],
+      ['file token', 'fl_ch1'],
+      ['name without extension', '01-introduction'],
+    ])('resolves a %s and reads the resolved path', async (_label, reference) => {
+      const result = await get(reference);
 
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'ch01',
-      });
-
-      expect(result.isError).toBeUndefined();
+      expect(mockClient.readFile).toHaveBeenNthCalledWith(2, 'bk_test', 'chapters/01-introduction.md');
+      expect(result.content[0].text).toContain('resolved');
     });
+  });
 
-    it('should find file by name without extension', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([
-        { hash: 'sha256:abc123', content: 'Content' },
-      ]);
-
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: '01-introduction',
-      });
-
-      expect(result.isError).toBeUndefined();
-    });
-
-    it('should return error when no commits found', async () => {
-      mockClient.listCommits.mockResolvedValue([]);
-
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'chapter.md',
-      });
-
-      expect(result.content[0].text).toContain('No commits found');
-    });
-
-    it('should return error when file not found and list available files', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
+  describe('when the file cannot be found', () => {
+    it('lists what is available instead of a bare not-found', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(new NotFoundError('nope'));
+      (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { token: 'cmt_1', filesSnapshot: SNAPSHOT },
       ]);
 
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'nonexistent.md',
-      });
+      const result = await get('nonexistent.md');
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('File not found: nonexistent.md');
-      expect(result.content[0].text).toContain('Available files');
-      expect(result.content[0].text).toContain('01-introduction.md');
+      expect(result.content[0].text).toContain('chapters/01-introduction.md');
     });
 
-    it('should return error when trying to read a folder', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
+    it('handles an empty book', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(new NotFoundError('nope'));
+      (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'Chapters',
-      });
+      const result = await get('anything.md');
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('is a folder');
+      expect(result.content[0].text).toContain('File not found');
     });
+  });
 
-    it('should handle empty file (no blobHash)', async () => {
-      const snapshotWithEmptyFile = [
-        {
-          token: 'empty',
-          name: 'empty.md',
-          kind: 'file',
-          position: 0,
-          blobHash: null,
-        },
-      ];
+  describe('errors other than not-found', () => {
+    it('does not attempt a fallback resolution', async () => {
+      (mockClient.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new SlimaApiError(500, 'INTERNAL_ERROR', 'Network error')
+      );
 
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: snapshotWithEmptyFile },
-      ]);
-
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'empty.md',
-      });
-
-      expect(result.content[0].text).toContain('has no content');
-    });
-
-    it('should handle blob download failure', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([]);
-
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: '01-introduction.md',
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Could not retrieve file content');
-    });
-
-    it('should handle API errors gracefully', async () => {
-      mockClient.listCommits.mockRejectedValue(new Error('Network error'));
-
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'chapter.md',
-      });
+      const result = await get('chapters/01-introduction.md');
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Network error');
-    });
-
-    it('should handle case-insensitive path matching', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([
-        { hash: 'sha256:abc123', content: 'Content' },
-      ]);
-
-      const handler = toolHandlers.get('get_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'CHAPTERS/01-INTRODUCTION.MD',
-      });
-
-      expect(result.isError).toBeUndefined();
+      expect(mockClient.listCommits).not.toHaveBeenCalled();
     });
   });
 });
