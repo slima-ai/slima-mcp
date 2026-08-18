@@ -33,10 +33,13 @@ describe('SlimaApiClient', () => {
         json: () => Promise.resolve({ data: mockBooks }),
       });
 
-      const books = await client.listBooks();
+      // listBooks now returns the page envelope: the `meta` half is what makes
+      // "you are seeing 100 of 137" possible instead of a silent truncation.
+      const { books, meta } = await client.listBooks();
 
       expect(books).toHaveLength(2);
       expect(books[0].title).toBe('Book 1');
+      expect(meta).toEqual({});
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.test.com/api/v1/books?status=active',
         expect.objectContaining({

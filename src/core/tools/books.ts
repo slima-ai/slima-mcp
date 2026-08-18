@@ -84,12 +84,14 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
   // === list_books ===
   server.tool(
     'list_books',
-    'List all books in your Slima library',
-    {},
+    'List the books in your Slima library. Results are paginated; if the response says more books exist, call again with the next `page` before concluding a book is not there.',
+    {
+      page: z.number().optional().describe('Page number (default 1). Only needed when the response says more books exist.'),
+    },
     { readOnlyHint: true, openWorldHint: true },
-    async () => {
+    async ({ page }) => {
       try {
-        const books = await client.listBooks();
+        const { books, meta } = await client.listBooks({ page });
 
         if (books.length === 0) {
           return {
@@ -109,11 +111,20 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
           })
           .join('\n\n');
 
+        // Never present a page as the whole library (CLAUDE.md Gotcha #12: a
+        // silent truncation reads as "that book does not exist"). Rails caps an
+        // un-paginated /books at 100 and reports the real total in meta.
+        const total = meta.total;
+        const header =
+          total !== undefined && total > books.length
+            ? `Showing ${books.length} of ${total} book(s) — page ${meta.page ?? 1} of ${meta.totalPages ?? '?'}. Call list_books again with \`page: ${(meta.page ?? 1) + 1}\` for the rest.`
+            : `Found ${books.length} book(s):`;
+
         return {
           content: [
             {
               type: 'text',
-              text: `Found ${books.length} book(s):\n\n${formatted}\n\n_📝 Script Studio books have write restrictions via MCP (see \`get_book\` or resource \`slima://books/{token}/schema\`). 📖 Writing Studio books are fully writable._`,
+              text: `${header}\n\n${formatted}\n\n_📝 Script Studio books have write restrictions via MCP (see \`get_book\` or resource \`slima://books/{token}/schema\`). 📖 Writing Studio books are fully writable._`,
             },
           ],
         };

@@ -30,6 +30,8 @@ import {
   type McpFileAppendResponse,
   type McpSearchResponse,
   type McpFileVisualizeResponse,
+  type BooksPage,
+  type PaginationMeta,
 } from './types.js';
 import {
   SlimaApiError,
@@ -133,6 +135,35 @@ export class SlimaApiClient {
   }
 
   /**
+   * Like #request but keeps the whole envelope. Paginated endpoints carry the
+   * real total in `meta`, and dropping it is how `list_books` came to report a
+   * capped page as if it were the whole library.
+   */
+  private async requestWithMeta<T>(
+    method: string,
+    path: string
+  ): Promise<{ data: T; meta?: PaginationMeta }> {
+    const url = `${this.baseUrl}${path}`;
+    const token = await this.getToken();
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': `slima-mcp-server/${__VERSION__}`,
+      },
+    });
+
+    this.handleUpgradeHint(response);
+    if (!response.ok) {
+      await this.handleErrorResponse(response);
+    }
+
+    return (await response.json()) as { data: T; meta?: PaginationMeta };
+  }
+
+  /**
    * Surface the X-Slima-MCP-Upgrade-Hint header (if present) as a warn log.
    * Deduped per (hint, baseUrl) to keep stderr quiet during long sessions.
    * Defensive: mocked Response objects in tests may not carry a full Headers
@@ -183,10 +214,16 @@ export class SlimaApiClient {
   // === Book Operations ===
 
   /**
-   * List all books
+   * List books (one page). `meta` carries the true total — callers must report
+   * it rather than presenting a page as the whole library.
    */
-  async listBooks(): Promise<Book[]> {
-    return this.request<Book[]>('GET', '/api/v1/books?status=active');
+  async listBooks(options: { page?: number } = {}): Promise<BooksPage> {
+    const page = options.page && options.page > 1 ? `&page=${options.page}` : '';
+    const response = await this.requestWithMeta<Book[]>(
+      'GET',
+      `/api/v1/books?status=active${page}`
+    );
+    return { books: response.data ?? [], meta: response.meta ?? {} };
   }
 
   /**

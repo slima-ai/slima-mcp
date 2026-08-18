@@ -11,9 +11,9 @@ import { handleMcpRequest, McpHandlerOptions } from '../../src/worker/mcp-handle
 // Mock the API client
 vi.mock('../../src/core/api/client.js', () => ({
   SlimaApiClient: vi.fn().mockImplementation(() => ({
-    listBooks: vi.fn().mockResolvedValue([
+    listBooks: vi.fn().mockResolvedValue({ books: [
       { token: 'bk_test1', title: 'Test Book 1', totalWordCount: 1000 },
-    ]),
+    ], meta: {} }),
     getBook: vi.fn().mockResolvedValue({
       token: 'bk_test1',
       title: 'Test Book 1',

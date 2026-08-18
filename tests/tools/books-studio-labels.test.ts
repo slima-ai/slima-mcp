@@ -39,10 +39,10 @@ describe('Studio labels — list_books and get_book', () => {
 
   describe('list_books', () => {
     it('tags script books with 📝 Script Studio and book-type books with 📖 Writing Studio', async () => {
-      mockClient.listBooks.mockResolvedValue([
+      mockClient.listBooks.mockResolvedValue({ books: [
         { token: 'bk_s', title: 'Script', bookType: 'script', createdAt: '', updatedAt: '' },
         { token: 'bk_b', title: 'Novel', bookType: 'book', createdAt: '', updatedAt: '' },
-      ]);
+      ], meta: {} });
 
       const result = await handlers.get('list_books')!({});
       const text = result.content[0].text;
@@ -52,9 +52,9 @@ describe('Studio labels — list_books and get_book', () => {
     });
 
     it('defaults to Writing Studio when bookType is missing', async () => {
-      mockClient.listBooks.mockResolvedValue([
+      mockClient.listBooks.mockResolvedValue({ books: [
         { token: 'bk_x', title: 'Old', createdAt: '', updatedAt: '' },
-      ]);
+      ], meta: {} });
 
       const result = await handlers.get('list_books')!({});
       const text = result.content[0].text;

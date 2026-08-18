@@ -43,7 +43,7 @@ describe('Book Tools Handlers', () => {
 
   describe('list_books handler', () => {
     it('should return formatted book list', async () => {
-      (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue({ books: [
         {
           token: 'bk_test1',
           title: 'My Novel',
@@ -56,7 +56,7 @@ describe('Book Tools Handlers', () => {
           authorName: 'Jane Doe',
           totalWordCount: 30000,
         },
-      ]);
+      ], meta: {} });
 
       const handler = handlers.get('list_books')!;
       const result = await handler({});
@@ -70,7 +70,7 @@ describe('Book Tools Handlers', () => {
     });
 
     it('should handle empty library', async () => {
-      (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue({ books: [], meta: {} });
 
       const handler = handlers.get('list_books')!;
       const result = await handler({});
@@ -80,13 +80,16 @@ describe('Book Tools Handlers', () => {
     });
 
     it('should handle books without author name', async () => {
-      (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          token: 'bk_test1',
-          title: 'Untitled',
-          totalWordCount: 0,
-        },
-      ]);
+      (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue({
+        books: [
+          {
+            token: 'bk_test1',
+            title: 'Untitled',
+            totalWordCount: 0,
+          },
+        ],
+        meta: {},
+      });
 
       const handler = handlers.get('list_books')!;
       const result = await handler({});

@@ -97,14 +97,14 @@ describe('Use Case: New Author Starting a Book', () => {
   });
 
   it('should verify book was created by listing books', async () => {
-    (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue([
+    (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue({ books: [
       {
         token: 'bk_newbook123',
         title: '我的第一本小說',
         authorName: '作者名',
         totalWordCount: 150,
       },
-    ]);
+    ], meta: {} });
 
     const listResult = await handlers.get('list_books')!({});
 
@@ -617,7 +617,7 @@ describe('Use Case: Empty Book Handling', () => {
   });
 
   it('should handle empty book list gracefully', async () => {
-    (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (mockClient.listBooks as ReturnType<typeof vi.fn>).mockResolvedValue({ books: [], meta: {} });
 
     const result = await handlers.get('list_books')!({});
 

@@ -61,7 +61,10 @@ describe('Book Tools', () => {
 
       const listBooksCall = toolSpy.mock.calls.find((call) => call[0] === 'list_books');
       expect(listBooksCall).toBeDefined();
-      expect(listBooksCall?.[1]).toBe('List all books in your Slima library');
+      // Description now warns about pagination: presenting a capped page as the
+      // whole library is how an AI concludes "that book does not exist".
+      expect(listBooksCall?.[1]).toContain('books in your Slima library');
+      expect(listBooksCall?.[1]).toMatch(/paginated/i);
     });
 
     it('should register get_book with book_token parameter', () => {

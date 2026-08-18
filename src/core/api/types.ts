@@ -30,6 +30,19 @@ export interface Book {
   deletedAt?: string;
 }
 
+/** Rails pagy_metadata — present on every paginated list endpoint. */
+export interface PaginationMeta {
+  total?: number;
+  page?: number;
+  perPage?: number;
+  totalPages?: number;
+}
+
+export interface BooksPage {
+  books: Book[];
+  meta: PaginationMeta;
+}
+
 // === 版本控制相關 ===
 
 export interface Commit {
