@@ -223,40 +223,30 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
   // === get_writing_stats ===
   server.tool(
     'get_writing_stats',
-    'Get writing statistics for a book',
+    `Get word-count totals for a book.
+
+Reports the book's authoritative totals only. Do NOT compute "progress", "words
+written today", or a writing streak from commit history — Slima prunes intra-day
+commits after 30 days, so any delta derived from "the last N commits" silently
+changes span over time and will not match what the author sees in the app. Those
+figures are account-level and are not exposed here.`,
     {
       book_token: z.string().describe('Book token'),
     },
     { readOnlyHint: true, openWorldHint: true },
     async ({ book_token }) => {
       try {
-        const [book, commits] = await Promise.all([
-          client.getBook(book_token),
-          client.listCommits(book_token, 10),
-        ]);
-
-        // Calculate recent progress
-        let wordChange = 0;
-        if (commits.length > 1) {
-          const latest = commits[0].totalWordCount || 0;
-          const oldest = commits[commits.length - 1].totalWordCount || 0;
-          wordChange = latest - oldest;
-        }
-
-        const sign = wordChange >= 0 ? '+' : '';
-        const progressText =
-          commits.length > 1
-            ? `${sign}${wordChange.toLocaleString()} words (last ${commits.length} commits)`
-            : 'N/A (not enough history)';
+        const book = await client.getBook(book_token);
 
         const text = `# Writing Stats: ${book.title}
 
 - **Total Words**: ${book.totalWordCount?.toLocaleString() || '0'}
-- **Manuscript Words**: ${book.manuscriptWordCount?.toLocaleString() || '0'}
-- **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'}
-- **Recent Progress**: ${progressText}
-- **Commits Analyzed**: ${commits.length}
-- **Language**: ${book.language || 'N/A'}`;
+- **Manuscript Words**: ${book.manuscriptWordCount?.toLocaleString() || '0'} (the book itself — what counts toward the author's word count)
+- **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'} (notes, worldbuilding — never counted)
+- **Language**: ${book.language || 'N/A'}
+- **Last updated**: ${book.updatedAt}
+
+_Daily word count, writing streak and rest protection are account-level in Slima and are not available through this tool. Do not estimate them from commit history — the figure would not match the author's._`;
 
         return {
           content: [{ type: 'text', text }],

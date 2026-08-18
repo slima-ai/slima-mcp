@@ -199,18 +199,14 @@ describe('Use Case: Daily Writing Workflow', () => {
       language: 'zh-TW',
     });
 
-    (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { token: 'cmt_1', totalWordCount: 2500 },
-      { token: 'cmt_2', totalWordCount: 2200 },
-      { token: 'cmt_3', totalWordCount: 2000 },
-    ]);
-
     const statsResult = await handlers.get('get_writing_stats')!({
       book_token: 'bk_test',
     });
 
     expect(statsResult.content[0].text).toContain('2,500');
-    expect(statsResult.content[0].text).toContain('+500'); // Progress
+    // No progress delta: it used to be derived from commit history, which
+    // cleanup reshapes over time. Totals only.
+    expect(statsResult.content[0].text).not.toContain('+500');
   });
 });
 

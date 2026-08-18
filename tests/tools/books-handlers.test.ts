@@ -211,67 +211,56 @@ describe('Book Tools Handlers', () => {
   });
 
   describe('get_writing_stats handler', () => {
-    it('should return writing stats with progress', async () => {
-      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue({
-        token: 'bk_test',
-        title: 'My Novel',
-        totalWordCount: 50000,
-        manuscriptWordCount: 45000,
-        referenceWordCount: 5000,
-        language: 'zh-TW',
-      });
+    // These used to assert a "Recent Progress" delta computed from the last N
+    // commits — a third word-count algorithm agreeing with neither the backend's
+    // authoritative WritingStats::QueryService nor the frontend's, and unstable
+    // because CommitCleanupJob prunes intra-day commits after 30 days (so the
+    // same book yields a different "progress" over time). Rewritten to assert
+    // the totals, which ARE authoritative, and the absence of the invention.
+    const book = {
+      token: 'bk_test',
+      title: 'My Novel',
+      totalWordCount: 50000,
+      manuscriptWordCount: 45000,
+      referenceWordCount: 5000,
+      language: 'zh-TW',
+      updatedAt: '2026-08-18T00:00:00Z',
+    };
+
+    it('returns the authoritative totals', async () => {
+      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue(book);
+
+      const result = await handlers.get('get_writing_stats')!({ book_token: 'bk_test' });
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[0].text).toContain('50,000');
+      expect(content[0].text).toContain('45,000');
+      expect(content[0].text).toContain('5,000');
+    });
+
+    it('does not derive any progress figure from commit history', async () => {
+      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue(book);
       (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
         { token: 'cmt_1', totalWordCount: 50000 },
-        { token: 'cmt_2', totalWordCount: 48000 },
         { token: 'cmt_3', totalWordCount: 45000 },
       ]);
 
-      const handler = handlers.get('get_writing_stats')!;
-      const result = await handler({ book_token: 'bk_test' });
+      const result = await handlers.get('get_writing_stats')!({ book_token: 'bk_test' });
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
-      expect(content[0].text).toContain('Writing Stats');
-      expect(content[0].text).toContain('50,000');
-      expect(content[0].text).toContain('Reference Words');
-      expect(content[0].text).toContain('+5,000'); // 50000 - 45000
-      expect(content[0].text).toContain('3 commits');
+      expect(content[0].text).not.toMatch(/recent progress/i);
+      expect(content[0].text).not.toContain('+5,000');
+      expect(mockClient.listCommits).not.toHaveBeenCalled();
     });
 
-    it('should handle single commit (no progress)', async () => {
-      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue({
-        token: 'bk_test',
-        title: 'New Book',
-        totalWordCount: 1000,
-        manuscriptWordCount: 1000,
-      });
-      (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { token: 'cmt_1', totalWordCount: 1000 },
-      ]);
+    it('tells the reader that daily words and streak live elsewhere', async () => {
+      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue(book);
 
-      const handler = handlers.get('get_writing_stats')!;
-      const result = await handler({ book_token: 'bk_test' });
+      const result = await handlers.get('get_writing_stats')!({ book_token: 'bk_test' });
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
-      expect(content[0].text).toContain('not enough history');
-    });
-
-    it('should handle negative progress (deleted words)', async () => {
-      (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue({
-        token: 'bk_test',
-        title: 'Editing Book',
-        totalWordCount: 40000,
-        manuscriptWordCount: 40000,
-      });
-      (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { token: 'cmt_1', totalWordCount: 40000 },
-        { token: 'cmt_2', totalWordCount: 50000 },
-      ]);
-
-      const handler = handlers.get('get_writing_stats')!;
-      const result = await handler({ book_token: 'bk_test' });
-
-      const content = (result as { content: Array<{ type: string; text: string }> }).content;
-      expect(content[0].text).toContain('-10,000');
+      expect(content[0].text).toMatch(/streak/i);
+      expect(content[0].text).toMatch(/not available/i);
     });
 
     it('should handle API error', async () => {
