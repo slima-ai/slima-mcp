@@ -338,7 +338,14 @@ export class SlimaApiClient {
    */
   async createFile(
     bookToken: string,
-    params: { path: string; content?: string; parentPath?: string; commitMessage?: string }
+    params: {
+      path: string;
+      content?: string;
+      parentPath?: string;
+      commitMessage?: string;
+      /** manuscript | reference | character | location | storyline */
+      contentType?: string;
+    }
   ): Promise<McpFileCreateResponse> {
     return this.request<McpFileCreateResponse>(
       'POST',
@@ -348,6 +355,7 @@ export class SlimaApiClient {
         content: params.content || '',
         parent_path: params.parentPath,
         commit_message: params.commitMessage,
+        content_type: params.contentType,
       }
     );
   }

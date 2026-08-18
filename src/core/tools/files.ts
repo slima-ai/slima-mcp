@@ -47,6 +47,21 @@ readable cast/relationship list, instead of raw ids and pixel coordinates.
 If the author asks for a change to one of these, describe the change in words and
 point them at that file type's editor in the Slima app.`;
 
+// Slima classifies every file as manuscript or reference (plus intrinsic planner
+// labels). ONLY manuscript counts toward the author's word count, writing streak,
+// Beta Reader chapter picker and manuscript export. A new file inherits its
+// folder and falls back to `reference` at the root, so prose written into a fresh
+// path is invisible in all of those unless it is declared.
+const CONTENT_TYPE_HINT =
+  'How Slima classifies this file. ' +
+  '"manuscript" = the book itself (prose/chapters) — this is what counts toward the author\'s ' +
+  'word count, daily goal and writing streak. ' +
+  '"reference" = notes, worldbuilding, research (never counted). ' +
+  '"character" / "location" / "storyline" = planner cards, which are reference plus a label. ' +
+  'Omit to inherit the containing folder (root-level files default to "reference"). ' +
+  'If you were asked to WRITE a chapter, pass "manuscript" — otherwise those words will not ' +
+  'appear in the author\'s word count.';
+
 const PATH_PARAM_HINT =
   'File path relative to book root. ' +
   'For Script Studio books: MUST be under ".script_studio/planning/" (e.g., ".script_studio/planning/references/outline.md"). ' +
@@ -241,6 +256,10 @@ ${AI_READONLY_WARNING}`,
   server.tool(
     'create_file',
     `Create a new file in a book (creates a new commit).
+
+**Writing a chapter? Pass \`content_type: "manuscript"\`.** Files default to
+"reference" (not counted in the author's word count, streak, or manuscript export)
+unless they inherit a manuscript folder or you say otherwise.
 ${SCRIPT_STUDIO_WRITE_WARNING}
 ${AI_READONLY_WARNING}`,
     {
@@ -249,22 +268,33 @@ ${AI_READONLY_WARNING}`,
         `${PATH_PARAM_HINT} Parent folders are auto-created (mkdir -p behavior).`
       ),
       content: z.string().optional().describe('Initial content (optional, defaults to empty)'),
+      content_type: z
+        .enum(['manuscript', 'reference', 'character', 'location', 'storyline'])
+        .optional()
+        .describe(CONTENT_TYPE_HINT),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
     { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async ({ book_token, path, content, commit_message }) => {
+    async ({ book_token, path, content, content_type, commit_message }) => {
       try {
         const result = await client.createFile(book_token, {
           path,
           content: content || '',
+          contentType: content_type,
           commitMessage: commit_message,
         });
+
+        // Report the classification back: "created" alone hid the one thing the
+        // author would notice — whether those words count.
+        const classification = content_type
+          ? `Classified as: ${content_type}${content_type === 'manuscript' ? ' (counts toward the word count)' : ' (not counted in the word count)'}`
+          : 'Classified by inheriting the parent folder (root-level defaults to reference, which is NOT counted in the word count).';
 
         return {
           content: [
             {
               type: 'text',
-              text: `File created successfully.\n\nFile Token: ${result.fileToken}\nCommit: ${result.commit.token}\nMessage: ${result.commit.name || result.commit.message}`,
+              text: `File created successfully.\n\nFile Token: ${result.fileToken}\nCommit: ${result.commit.token}\nMessage: ${result.commit.name || result.commit.message}\n${classification}`,
             },
           ],
         };
