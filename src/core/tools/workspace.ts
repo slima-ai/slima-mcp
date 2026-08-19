@@ -87,6 +87,28 @@ Use \`note_type: "chapter"\` with the file's token in \`file_id\` to anchor it t
   );
 
   server.tool(
+    'semantic_search',
+    `Find passages by MEANING rather than by the words used.
+
+\`search_content\` finds the word an author typed; this finds the passage they meant — "where does the mother's resentment surface?" returns the scene even when neither word appears in it. On a team knowledge base it is the difference between browsing and asking.
+
+Costs a small embedding charge, unlike literal search. Returns §N paragraph anchors so you can quote them back precisely.`,
+    {
+      book_token: BOOK_TOKEN,
+      query: z.string().describe('What you are looking for, in natural language'),
+      limit: z.number().optional().describe('Max results (default 10, cap 50)'),
+    },
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    async ({ book_token, query, limit }) => {
+      try {
+        return json(await client.semanticSearch(book_token, query, limit));
+      } catch (error) {
+        return failure(error);
+      }
+    }
+  );
+
+  server.tool(
     'list_comments',
     `Editorial comment threads on this book, open and resolved.
 

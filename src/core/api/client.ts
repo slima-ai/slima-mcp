@@ -269,6 +269,10 @@ export class SlimaApiClient {
     return this.request('GET', `/api/v1/teams/${token}/rules`);
   }
 
+  async semanticSearch(bookToken: string, query: string, limit?: number): Promise<unknown> {
+    return this.request('POST', `/api/v1/books/${bookToken}/semantic-search`, { query, limit });
+  }
+
   // === Notes and comments ===================================================
 
   async listNotes(bookToken: string): Promise<unknown> {
