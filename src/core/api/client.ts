@@ -220,6 +220,81 @@ export class SlimaApiClient {
   /**
    * Get book details
    */
+  // === Teaching surface =====================================================
+  //
+  // These are why the client stays thin. Everything they return is authored and
+  // served by Rails, so the guidance an AI reads updates when the server
+  // deploys — including for the users who pinned an old version of this package,
+  // who are exactly the ones stale guidance would mislead.
+
+  async getCapabilities(): Promise<unknown> {
+    return this.request('GET', '/api/v1/mcp/capabilities');
+  }
+
+  async listGuides(): Promise<{ guides: Array<{ slug: string; title: string; summary: string }> }> {
+    return this.request('GET', '/api/v1/mcp/guides');
+  }
+
+  async loadGuide(slug: string): Promise<{ slug: string; title: string; body: string }> {
+    return this.request('GET', `/api/v1/mcp/guides/${encodeURIComponent(slug)}`);
+  }
+
+  async listWritingSkills(): Promise<{ skills: Array<{ key: string; name: string; description: string }> }> {
+    return this.request('GET', '/api/v1/mcp/skills');
+  }
+
+  async loadWritingSkill(key: string): Promise<{ key: string; name: string; body: string }> {
+    return this.request('GET', `/api/v1/mcp/skills/${encodeURIComponent(key)}`);
+  }
+
+  // === Teams ================================================================
+
+  async listTeams(): Promise<unknown[]> {
+    return this.request('GET', '/api/v1/teams');
+  }
+
+  async getTeam(token: string): Promise<unknown> {
+    return this.request('GET', `/api/v1/teams/${token}`);
+  }
+
+  async listTeamSkills(token: string): Promise<unknown[]> {
+    return this.request('GET', `/api/v1/teams/${token}/skills`);
+  }
+
+  async listTeamMemories(token: string): Promise<unknown> {
+    return this.request('GET', `/api/v1/teams/${token}/memories`);
+  }
+
+  async listTeamRules(token: string): Promise<unknown> {
+    return this.request('GET', `/api/v1/teams/${token}/rules`);
+  }
+
+  // === Notes and comments ===================================================
+
+  async listNotes(bookToken: string): Promise<unknown> {
+    return this.request('GET', `/api/v1/books/${bookToken}/notes`);
+  }
+
+  async createNote(bookToken: string, note: Record<string, unknown>): Promise<unknown> {
+    return this.request('POST', `/api/v1/books/${bookToken}/notes`, { note });
+  }
+
+  async listComments(bookToken: string): Promise<unknown> {
+    return this.request('GET', `/api/v1/books/${bookToken}/comments`);
+  }
+
+  async createComment(bookToken: string, comment: Record<string, unknown>): Promise<unknown> {
+    return this.request('POST', `/api/v1/books/${bookToken}/comments`, { comment });
+  }
+
+  async resolveComment(bookToken: string, commentToken: string): Promise<unknown> {
+    return this.request('POST', `/api/v1/books/${bookToken}/comments/${commentToken}/resolve`);
+  }
+
+  async reopenComment(bookToken: string, commentToken: string): Promise<unknown> {
+    return this.request('POST', `/api/v1/books/${bookToken}/comments/${commentToken}/reopen`);
+  }
+
   async getBook(token: string): Promise<Book> {
     return this.request<Book>('GET', `/api/v1/books/${token}`);
   }

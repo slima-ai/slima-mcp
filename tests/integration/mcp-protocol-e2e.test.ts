@@ -292,14 +292,46 @@ describe('MCP Protocol E2E — Script Studio Studio awareness', () => {
   });
 
   describe('initialize handshake', () => {
-    it('surfaces server-level instructions explaining Writing/Script Studio', async () => {
+    // This used to assert the instructions spelled out Writing Studio, Script
+    // Studio and `.script_studio/planning`. Those facts have not gone away —
+    // they moved into the `script-studio` guide and the per-book schema
+    // resource, both loaded on demand.
+    //
+    // The reason they moved is that this text is paid for on EVERY session,
+    // including every session that never touches a screenplay, and because a
+    // pinned client keeps asserting whatever is written here long after it
+    // stops being true. What the handshake owes the AI is a route to the
+    // current answer, not a copy of today's one — so that is what is asserted.
+    it('points the AI at the capability call rather than restating the rules', async () => {
       const { client, cleanup } = await setupHarness(fakeRails.baseUrl);
       try {
         const instructions = client.getInstructions?.();
         expect(instructions).toBeDefined();
-        expect(instructions!).toMatch(/writing studio/i);
-        expect(instructions!).toMatch(/script studio/i);
-        expect(instructions!).toContain('.script_studio/planning');
+        expect(instructions!).toContain('get_capabilities');
+        expect(instructions!).toContain('load_guide');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('states the facts that are useless one call too late', async () => {
+      // A commit-shaped write model and a concurrent human editor change what a
+      // first tool call should be. An AI that learns them after its first
+      // whole-file write has learned them too late.
+      const { client, cleanup } = await setupHarness(fakeRails.baseUrl);
+      try {
+        const instructions = client.getInstructions?.();
+        expect(instructions!).toMatch(/every write is a commit/i);
+        expect(instructions!).toMatch(/edit_file/);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('stays short enough to be worth sending on every session', async () => {
+      const { client, cleanup } = await setupHarness(fakeRails.baseUrl);
+      try {
+        expect(client.getInstructions?.()!.length).toBeLessThan(1800);
       } finally {
         await cleanup();
       }

@@ -12,6 +12,9 @@ export * from './api/types.js';
 // Tools
 export {
   registerBookTools,
+  registerTeachingTools,
+  registerTeamTools,
+  registerWorkspaceTools,
   registerContentTools,
   registerBetaReaderTools,
   registerFileTools,

@@ -6,6 +6,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SlimaApiClient } from '../core/api/client.js';
 import {
   registerBookTools,
+  registerTeachingTools,
+  registerTeamTools,
+  registerWorkspaceTools,
   registerContentTools,
   registerBetaReaderTools,
   registerFileTools,
@@ -43,7 +46,12 @@ export function createSlimaServer(config: ServerConfig): McpServer {
   );
 
   // Register tools
+  // Teaching first: it is what an AI should reach for before anything else,
+  // and tool order is the only ordering signal the protocol carries.
+  registerTeachingTools(server, client);
   registerBookTools(server, client);
+  registerTeamTools(server, client);
+  registerWorkspaceTools(server, client);
   registerContentTools(server, client);
   registerBetaReaderTools(server, client, logger);
   registerFileTools(server, client);
