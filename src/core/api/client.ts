@@ -166,9 +166,18 @@ export class SlimaApiClient {
         signal: controller.signal,
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      // Check the signal, not just the error name. `AbortError` is what Node and
+      // browsers throw, but this same client runs in Cloudflare Workers, and a
+      // runtime that names its abort differently would otherwise slip past into
+      // the generic branch and lose the "the server may still be processing it"
+      // guidance. The name check stays as the fallback for the reverse case —
+      // an abort surfacing before the signal flips.
+      if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         throw new RequestTimeoutError(REQUEST_TIMEOUT_MS);
       }
+      // Anything else — including a platform-level timeout the runtime imposes
+      // on its own, which we did not trigger and cannot recognise — is passed
+      // through unchanged rather than mislabelled as our deadline.
       throw error;
     } finally {
       clearTimeout(deadline);
