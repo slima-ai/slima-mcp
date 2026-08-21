@@ -8,6 +8,8 @@ import {
   AuthenticationError,
   NotFoundError,
   InsufficientCreditsError,
+  RateLimitedError,
+  formatErrorForMcp,
 } from '../../src/utils/errors.js';
 
 describe('SlimaApiClient', () => {
@@ -457,5 +459,96 @@ describe('SlimaApiClient', () => {
 
       expect(result.matches).toHaveLength(0);
     });
+  });
+});
+
+/**
+ * Resilience — added 2026-08-21 after an audit found request() had no deadline
+ * and threw away Retry-After.
+ *
+ * Rails runs ~24 rack-attack throttle rules and sends Retry-After with its
+ * 429s. Before this, both 429 and 503 fell through to a generic SlimaApiError,
+ * so an agent was told "something went wrong" with no way to tell a temporary
+ * throttle from a rejected request, and no idea how long to wait. That is the
+ * same failure as a misleading error message (Rails CLAUDE.md Gotcha #26),
+ * only the missing part is a number rather than a sentence.
+ */
+describe('SlimaApiClient resilience', () => {
+  let client: SlimaApiClient;
+
+  beforeEach(() => {
+    client = new SlimaApiClient({ token: 'test_token', baseUrl: 'https://api.test.com' });
+    vi.resetAllMocks();
+  });
+
+  function throttled(retryAfter?: string) {
+    return {
+      ok: false,
+      status: 429,
+      headers: { get: (name: string) => (name === 'retry-after' ? (retryAfter ?? null) : null) },
+      json: () => Promise.resolve({ error: { code: 'RATE_LIMITED', message: 'Slow down' } }),
+    };
+  }
+
+  it('surfaces a 429 as RateLimitedError carrying Retry-After', async () => {
+    global.fetch = vi.fn().mockResolvedValue(throttled('12'));
+
+    await expect(client.listBooks()).rejects.toMatchObject({
+      name: 'RateLimitedError',
+      retryAfterSeconds: 12,
+    });
+  });
+
+  it('accepts an HTTP-date Retry-After as well as a delta', async () => {
+    const tenSecondsOut = new Date(Date.now() + 10_000).toUTCString();
+    global.fetch = vi.fn().mockResolvedValue(throttled(tenSecondsOut));
+
+    try {
+      await client.listBooks();
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect((error as RateLimitedError).retryAfterSeconds).toBeGreaterThan(0);
+      expect((error as RateLimitedError).retryAfterSeconds).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('still reports a 429 when Retry-After is absent', async () => {
+    global.fetch = vi.fn().mockResolvedValue(throttled());
+
+    await expect(client.listBooks()).rejects.toMatchObject({
+      name: 'RateLimitedError',
+      retryAfterSeconds: undefined,
+    });
+  });
+
+  it('tells the caller how long to wait, in words it can act on', () => {
+    expect(formatErrorForMcp(new RateLimitedError(12))).toContain('12 seconds');
+    expect(formatErrorForMcp(new RateLimitedError(1))).toContain('1 second');
+    expect(formatErrorForMcp(new RateLimitedError())).toContain('a few seconds');
+  });
+
+  it('converts an aborted fetch into RequestTimeoutError rather than leaking AbortError', async () => {
+    const aborted = new Error('The operation was aborted');
+    aborted.name = 'AbortError';
+    global.fetch = vi.fn().mockRejectedValue(aborted);
+
+    await expect(client.listBooks()).rejects.toMatchObject({ name: 'RequestTimeoutError' });
+  });
+
+  it('passes an abort signal on every request', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ data: [] }) });
+
+    await client.listBooks();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: expect.anything() })
+    );
+  });
+
+  it('does not turn a non-abort network failure into a timeout', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(client.listBooks()).rejects.toThrow(TypeError);
   });
 });

@@ -35,9 +35,52 @@ export class InsufficientCreditsError extends SlimaApiError {
 }
 
 /**
+ * 429 from Rails' rack-attack.
+ *
+ * `retryAfter` is the whole point of having a distinct class: without it the
+ * caller is told "you were throttled" but not for how long, and an agent's
+ * only options are to guess or to give up. Rails runs ~24 throttle rules and
+ * sends Retry-After with them; dropping that header turns a recoverable pause
+ * into an opaque failure.
+ */
+export class RateLimitedError extends SlimaApiError {
+  constructor(
+    public retryAfterSeconds?: number,
+    message?: string
+  ) {
+    super(429, 'RATE_LIMITED', message || 'Rate limited');
+    this.name = 'RateLimitedError';
+  }
+}
+
+/**
+ * The request exceeded its own deadline — distinct from the server refusing
+ * it. Nothing here used to time out at all, so a hung server meant a tool call
+ * that never returned.
+ */
+export class RequestTimeoutError extends SlimaApiError {
+  constructor(public timeoutMs: number) {
+    super(408, 'REQUEST_TIMEOUT', `Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    this.name = 'RequestTimeoutError';
+  }
+}
+
+/**
  * 格式化錯誤訊息供 MCP 回傳
  */
 export function formatErrorForMcp(error: unknown): string {
+  if (error instanceof RateLimitedError) {
+    const wait = error.retryAfterSeconds;
+
+    return wait
+      ? `Rate limited. Wait ${wait} second${wait === 1 ? '' : 's'} and try the same call again — this is a temporary throttle, not a rejected request.`
+      : 'Rate limited. Wait a few seconds and try the same call again — this is a temporary throttle, not a rejected request.';
+  }
+
+  if (error instanceof RequestTimeoutError) {
+    return `${error.message}. The server may still be processing it, so re-running a write could duplicate work — prefer re-reading the current state first.`;
+  }
+
   if (error instanceof SlimaApiError) {
     switch (error.code) {
       case 'UNAUTHORIZED':

@@ -38,7 +38,41 @@ import {
   AuthenticationError,
   NotFoundError,
   InsufficientCreditsError,
+  RateLimitedError,
+  RequestTimeoutError,
 } from '../utils/errors.js';
+
+/**
+ * Per-request deadline.
+ *
+ * Sixty seconds is well clear of any single Slima endpoint — the long-running
+ * one (Beta Reader) is polled in short calls rather than held open — while
+ * still being short enough that a wedged server surfaces as an error the agent
+ * can act on instead of a tool call that never comes back.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * Retry-After is either a delta in seconds or an HTTP date (RFC 9110). Both
+ * appear in the wild, so handle both and return undefined rather than a wrong
+ * number when it is absent or unparseable — a missing wait is better than a
+ * confidently incorrect one.
+ */
+function parseRetryAfter(response: Response): number | undefined {
+  // Guarded the same way handleUpgradeHint is: mocked Response objects in tests
+  // do not always carry a full Headers interface, and a throttle response is a
+  // bad moment to crash on a missing accessor.
+  const header = response.headers?.get?.('retry-after');
+  if (!header) return undefined;
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+
+  const when = Date.parse(header);
+  if (Number.isNaN(when)) return undefined;
+
+  return Math.max(0, Math.ceil((when - Date.now()) / 1000));
+}
 
 // Export for logger injection (optional)
 export interface Logger {
@@ -112,15 +146,33 @@ export class SlimaApiClient {
 
     this.logger.debug(`${method} ${path}`);
 
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': `slima-mcp-server/${__VERSION__}`,
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    // Nothing here used to bound the call. If Rails stopped responding the
+    // fetch would sit open for whatever the host runtime allowed, and the MCP
+    // client had no deadline of its own — a hung server became a tool call
+    // that never returned.
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': `slima-mcp-server/${__VERSION__}`,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new RequestTimeoutError(REQUEST_TIMEOUT_MS);
+      }
+      throw error;
+    } finally {
+      clearTimeout(deadline);
+    }
 
     // Rails surfaces a soft staleness signal via this header when the client
     // is older than McpVersions::MIN_RECOMMENDED. Log once per request so the
@@ -197,6 +249,11 @@ export class SlimaApiClient {
         throw new NotFoundError(message);
       case 402:
         throw new InsufficientCreditsError();
+      case 429:
+        // Rails' rack-attack sends Retry-After alongside the 429. Carrying it
+        // through is what separates "wait N seconds, then repeat the call"
+        // from a generic failure the agent has to guess its way out of.
+        throw new RateLimitedError(parseRetryAfter(response), message);
       default:
         throw new SlimaApiError(response.status, code, message);
     }
