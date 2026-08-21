@@ -1,17 +1,71 @@
 /**
  * Integration Tests - Full Server
  *
- * These tests verify the complete server setup without mocking,
- * ensuring all tools are properly registered and configured.
+ * Verifies the complete tool surface without mocking the registration itself.
+ *
+ * ⚠️ This file used to register only four modules — books, content, beta-reader,
+ * files — through the deprecated `src/tools/*` shims, and assert a hardcoded
+ * count. When teaching/teams/workspace landed (2026-08-20, seventeen more
+ * tools), the test did not go red: it was never asked about them. A file named
+ * "Full Server Setup" was covering under half the surface, and its own title
+ * said 15 while its assertion said 16.
+ *
+ * Two changes keep that from recurring:
+ *   - every module is pulled from `src/core/tools/index.ts`, the same barrel
+ *     the real entry points import, so a new module reaches this test the
+ *     moment it is exported rather than when someone remembers to add it here
+ *   - the assertion is the *set of tool names*, not a count. Tool names are
+ *     what an AI client actually binds to, so that set is the contract worth
+ *     pinning; a count tells you a number moved but not which capability
+ *     appeared or vanished.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SlimaApiClient } from '../../src/api/client.js';
-import { registerBookTools } from '../../src/tools/books.js';
-import { registerContentTools } from '../../src/tools/content.js';
-import { registerBetaReaderTools } from '../../src/tools/beta-reader.js';
-import { registerFileTools } from '../../src/tools/files.js';
+import { SlimaApiClient } from '../../src/core/api/client.js';
+import {
+  registerBookTools,
+  registerContentTools,
+  registerBetaReaderTools,
+  registerFileTools,
+  registerTeachingTools,
+  registerTeamTools,
+  registerWorkspaceTools,
+} from '../../src/core/tools/index.js';
+
+/** Mirrors the registration order in src/cli/server.ts and src/worker/mcp-handler.ts. */
+function registerEverything(server: McpServer, client: SlimaApiClient): void {
+  registerBookTools(server, client);
+  registerTeachingTools(server, client);
+  registerTeamTools(server, client);
+  registerWorkspaceTools(server, client);
+  registerContentTools(server, client);
+  registerBetaReaderTools(server, client);
+  registerFileTools(server, client);
+}
+
+/**
+ * The published tool surface. Adding a tool means adding it here — that is the
+ * point: the diff shows a reviewer exactly which capability changed.
+ */
+const EXPECTED_TOOLS = [
+  // books
+  'create_book', 'list_books', 'get_book', 'get_book_structure', 'get_writing_stats',
+  // teaching
+  'get_capabilities', 'list_guides', 'load_guide', 'list_writing_skills', 'load_writing_skill',
+  // teams
+  'list_teams', 'get_team', 'list_team_memories', 'list_team_rules', 'list_team_skills',
+  // workspace
+  'list_notes', 'create_note', 'list_comments', 'create_comment', 'resolve_comment',
+  'reopen_comment', 'semantic_search',
+  // content
+  'get_chapter',
+  // beta reader
+  'list_personas', 'analyze_chapter', 'get_reader_test',
+  // files
+  'read_file', 'write_file', 'edit_file', 'create_file', 'delete_file', 'append_to_file',
+  'search_content', 'view_relationship_map',
+].sort();
 
 describe('Integration: Full Server Setup', () => {
   let server: McpServer;
@@ -26,63 +80,26 @@ describe('Integration: Full Server Setup', () => {
   });
 
   describe('All tools registration', () => {
-    it('should register all 15 tools across all modules', () => {
-      const mockClient = {} as SlimaApiClient;
+    it('registers exactly the published tool surface', () => {
+      registerEverything(server, {} as SlimaApiClient);
 
-      // Register all tool groups
-      registerBookTools(server, mockClient);
-      registerContentTools(server, mockClient);
-      registerBetaReaderTools(server, mockClient);
-      registerFileTools(server, mockClient);
+      const registered = toolSpy.mock.calls.map((call) => call[0] as string).sort();
 
-      // Expected total: 5 (books) + 1 (content) + 2 (beta-reader) + 8 (files) = 16
-      expect(toolSpy).toHaveBeenCalledTimes(16);
+      expect(registered).toEqual(EXPECTED_TOOLS);
     });
 
-    it('should have all expected tool names', () => {
-      const mockClient = {} as SlimaApiClient;
+    it('registers each tool exactly once', () => {
+      registerEverything(server, {} as SlimaApiClient);
 
-      registerBookTools(server, mockClient);
-      registerContentTools(server, mockClient);
-      registerBetaReaderTools(server, mockClient);
-      registerFileTools(server, mockClient);
+      const registered = toolSpy.mock.calls.map((call) => call[0] as string);
 
-      const toolNames = toolSpy.mock.calls.map((call) => call[0]);
-
-      // Book tools
-      expect(toolNames).toContain('create_book');
-      expect(toolNames).toContain('list_books');
-      expect(toolNames).toContain('get_book');
-      expect(toolNames).toContain('get_book_structure');
-      expect(toolNames).toContain('get_writing_stats');
-
-      // Content tools
-      expect(toolNames).toContain('get_chapter');
-
-      // Beta reader tools
-      expect(toolNames).toContain('list_personas');
-      expect(toolNames).toContain('analyze_chapter');
-
-      // File tools
-      expect(toolNames).toContain('read_file');
-      expect(toolNames).toContain('write_file');
-      expect(toolNames).toContain('edit_file');
-      expect(toolNames).toContain('create_file');
-      expect(toolNames).toContain('delete_file');
-      expect(toolNames).toContain('append_to_file');
-      expect(toolNames).toContain('search_content');
-      expect(toolNames).toContain('view_relationship_map');
+      expect(registered).toHaveLength(new Set(registered).size);
     });
   });
 
   describe('Tool descriptions', () => {
     it('should have meaningful descriptions for all tools', () => {
-      const mockClient = {} as SlimaApiClient;
-
-      registerBookTools(server, mockClient);
-      registerContentTools(server, mockClient);
-      registerBetaReaderTools(server, mockClient);
-      registerFileTools(server, mockClient);
+      registerEverything(server, {} as SlimaApiClient);
 
       // Each tool call should have a description (second argument)
       for (const call of toolSpy.mock.calls) {

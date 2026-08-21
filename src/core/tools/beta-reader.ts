@@ -204,11 +204,24 @@ export function registerBetaReaderTools(
         }
 
         if (result.status !== 'completed') {
+          // The report is still running server-side — and it has already been
+          // paid for. Naming get_reader_test here matters: the previous wording
+          // ("you can check the status later") pointed at a capability that did
+          // not exist, so an agent's only reachable next step was to call
+          // analyze_chapter again, which starts a *second* report and charges a
+          // second time.
           return {
             content: [
               {
                 type: 'text',
-                text: `Analysis is still in progress. You can check the status later.\n\nTest ID: ${test.token}`,
+                text: `The report is still being written (${result.progress ?? 0}% complete). It is running on the server and has already been paid for.
+
+Call \`get_reader_test\` with this token in a little while to collect it:
+
+  book_token: ${book_token}
+  test_token: ${test.token}
+
+Do NOT call analyze_chapter again for this chapter — that starts a separate report and charges for it a second time.`,
               },
             ],
           };
@@ -231,6 +244,82 @@ export function registerBetaReaderTools(
       }
     }
   );
+
+  // Collect a report that analyze_chapter started but could not wait out.
+  //
+  // Without this, analyze_chapter's timeout branch had nowhere to send the
+  // agent: it handed back a test token that no tool accepted. The only move
+  // left was to re-run analyze_chapter, which bills a second report for work
+  // already in flight. A wrong next step is expensive here, not just unhelpful.
+  server.tool(
+    'get_reader_test',
+    `Collect an AI Beta Reader report by its test token — for a report that analyze_chapter started but did not finish inside its wait window.
+
+Use this rather than calling analyze_chapter again: the report is already running server-side and has already been charged. Re-running starts a second report and charges again.`,
+    {
+      book_token: z.string().describe('Book token (e.g., bk_abc123)'),
+      test_token: z
+        .string()
+        .describe('Reader test token, as handed back by analyze_chapter when it timed out'),
+    },
+    { readOnlyHint: true, openWorldHint: true },
+    async ({ book_token, test_token }) => {
+      try {
+        const progress = await client.getReaderTestProgress(book_token, test_token);
+
+        if (progress.status === 'failed') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'That report failed while running. Start a new one with analyze_chapter.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        if (progress.status !== 'completed') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Still being written (${progress.progress ?? 0}% complete). Call get_reader_test again with the same token shortly — do not start a new analysis, this one is still running and already paid for.`,
+              },
+            ],
+          };
+        }
+
+        const fullResult = await client.getReaderTest(book_token, test_token);
+
+        return {
+          content: [
+            { type: 'text', text: formatBetaReaderFeedback(fullResult, describeScope(fullResult)) },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: formatErrorForMcp(error) }],
+          isError: true,
+        };
+      }
+    }
+  );
+}
+
+/**
+ * A heading for a report collected by token rather than by file.
+ *
+ * analyze_chapter knows the file it was handed; get_reader_test only has the
+ * token, and ReaderTest carries no filename. Falling back to the report's own
+ * scope keeps the heading honest instead of inventing a name.
+ */
+function describeScope(test: ReaderTest): string {
+  const scopePath = test.scopeConfig?.filePath;
+
+  return typeof scopePath === 'string' && scopePath.length > 0
+    ? scopePath
+    : `${test.reportType} report`;
 }
 
 /**
@@ -240,12 +329,16 @@ async function pollForCompletion(
   checkFn: () => Promise<{ status: string; progress?: number }>,
   timeoutMs: number,
   logger: Logger
-): Promise<{ status: string }> {
+): Promise<{ status: string; progress?: number }> {
   const startTime = Date.now();
   const pollInterval = 3000; // 3 seconds
+  // Carried out of the loop so a timeout can report how far the report actually
+  // got. "Still being written" is far more useful with a number attached.
+  let lastProgress: number | undefined;
 
   while (Date.now() - startTime < timeoutMs) {
     const result = await checkFn();
+    lastProgress = result.progress;
     logger.debug(`Poll status: ${result.status}, progress: ${result.progress || 'N/A'}`);
 
     if (result.status === 'completed' || result.status === 'failed') {
@@ -255,7 +348,7 @@ async function pollForCompletion(
     await sleep(pollInterval);
   }
 
-  return { status: 'timeout' };
+  return { status: 'timeout', progress: lastProgress };
 }
 
 /**
