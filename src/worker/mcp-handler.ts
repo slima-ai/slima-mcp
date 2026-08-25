@@ -19,6 +19,7 @@ import {
 } from '../core/tools/index.js';
 import { registerBookSchemaResource } from '../core/resources/index.js';
 import { SERVER_INSTRUCTIONS } from '../core/server-instructions.js';
+import { withGeminiSchemaCompat } from '../core/schema-compat.js';
 
 // __VERSION__ is injected at build time by tsup.worker.config.ts.
 declare const __VERSION__: string;
@@ -82,8 +83,11 @@ export async function handleMcpRequest(
     enableJsonResponse: true, // Return JSON responses (valid per MCP spec)
   });
 
-  // Connect server to transport
-  await server.connect(transport);
+  // Connect server to transport.
+  // withGeminiSchemaCompat strips the two schema keys Gemini's function-calling proto
+  // refuses to parse; without it Gemini 400s on the whole tool catalogue and reports
+  // that the server has no tools at all (see src/core/schema-compat.ts).
+  await server.connect(withGeminiSchemaCompat(transport));
 
   try {
     logger.info(`MCP handleRequest: method=${request.method} url=${request.url} accept=${request.headers.get('Accept')} content-type=${request.headers.get('Content-Type')}`);

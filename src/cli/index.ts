@@ -10,6 +10,7 @@
  */
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { withGeminiSchemaCompat } from '../core/schema-compat.js';
 import { createSlimaServer } from './server.js';
 import { logger } from '../core/utils/logger.js';
 import { loadToken, getCredentialsFilePath } from './token-storage.js';
@@ -101,7 +102,10 @@ async function startServer(): Promise<void> {
     });
 
     const transport = new StdioServerTransport();
-    await server.connect(transport);
+    // Same schema sanitising as the Worker — a stdio client can be driven by Gemini too
+    // (Gemini CLI, ADK agents), and one behaviour across both transports is one thing to
+    // reason about. See src/core/schema-compat.ts.
+    await server.connect(withGeminiSchemaCompat(transport));
 
     logger.info('Slima MCP Server running on stdio');
 

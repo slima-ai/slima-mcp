@@ -20,5 +20,14 @@ export {
   registerFileTools,
 } from './tools/index.js';
 
+// Tool-schema compatibility (Gemini's strict parameters proto)
+export {
+  withGeminiSchemaCompat,
+  sanitizeOutgoingMessage,
+  stripIncompatibleSchemaKeys,
+  GEMINI_REJECTED_SCHEMA_KEYS,
+  STRIPPED_SCHEMA_KEYS,
+} from './schema-compat.js';
+
 // Utils
 export * from './utils/errors.js';
