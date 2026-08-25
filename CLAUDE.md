@@ -304,6 +304,32 @@ expect(result.content[0].text).toContain('expected');
 
 ## 重要注意事項
 
+### Tool schema 必須進得了 Gemini 的 `parameters` proto（2026-08-25 事故）
+
+Gemini 的 `functionDeclarations[].parameters` **不是 JSON Schema**，是嚴格的
+OpenAPI-3.0 子集 proto：多一個它不認識的欄位不是被忽略，是**整個請求 HTTP 400**
+（`Unknown name "$schema" at 'tools[0].function_declarations[0].parameters'`）。
+一個工具帶壞 key ⇒ 這個 client **一個工具都拿不到**。Claude 與 OpenAI 兩邊都照收
+（含或不含皆可，實測過），所以只有 Gemini 會炸。
+
+**這個故障從我們這側完全看不見**：使用者在 Gemini app 連上 Slima，DCR／OAuth／PKCE
+全過、發了三顆 token、每一個 `POST /mcp` 都 200/202 零 4xx、完整工具清單也確實送出去了，
+Gemini 卻說「沒有 Slima 的工具」並改用網路搜尋回答他自己的書；Rails 的
+`api_tokens.last_used_at` 三顆全是 `NULL`——一次工具呼叫都沒進來。根因就是 SDK 的
+zod-to-json-schema 在**每個**工具上自動加的 `$schema` 與 `additionalProperties`。
+
+- 修法在 `src/core/schema-compat.ts`，包在 transport 的 `send` 上
+  （`withGeminiSchemaCompat`）：一層同時覆蓋 JSON／SSE／stdio，也不用去戳 SDK 的私有
+  handler registry。worker 與 CLI 兩個入口都要包。
+- **只剝 `$schema` 與 `additionalProperties` 這兩個無損的 key**，不是把 Gemini 拒收的
+  14 個全剝掉。剝掉 `$ref` 會留下一個什麼都沒描述的 schema、剝掉 `const` 會悄悄放寬
+  工具真的有的限制——**安靜地把 schema 改錯比那個 400 更糟**。其餘的交給
+  `tests/worker/tool-schema-compat.test.ts` 這道架構守門：它跑真的 handler、對真的工具
+  清單斷言，哪天有人加的工具 zod shape 編出 `const`／`$ref`／`exclusiveMinimum`，
+  **改的是那個 zod shape，不是把剝除清單加寬**。
+- `GEMINI_REJECTED_SCHEMA_KEYS` 那 14 個是**實測**出來的（逐個丟給 `generateContent` 看
+  它回哪些 `Unknown name`），不是照文件抄的，改動前請照同一個方法重測。
+
 ### MCP STDIO 模式
 
 - **日誌必須輸出到 stderr**，不能用 stdout
