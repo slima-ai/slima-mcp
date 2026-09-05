@@ -367,6 +367,8 @@ export interface McpFileEditResponse {
 
 export interface McpFileDeleteResponse {
   commit: Commit;
+  /** How many files/folders went with a recursive folder delete (0 for a plain file). */
+  deletedDescendants?: number;
 }
 
 export interface McpFileAppendResponse {

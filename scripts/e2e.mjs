@@ -326,9 +326,24 @@ async function main() {
   const viz = await call('view_relationship_map', { book_token: BOOK, path: 'world/relations.map' });
   record('view_relationship_map answers', !viz.isError, viz.text.split('\n')[0]);
 
+  // ── search filtering by extension ──────────────────────────────────
+  const typed = await call('search_content', { book_token: BOOK, query: '門開了', file_types: ['md'] });
+  record('search_content filters by extension', !typed.isError && typed.text.includes('ch01.md'));
+  const typedMiss = await call('search_content', { book_token: BOOK, query: '門開了', file_types: ['pdf'] });
+  record('search_content excludes other extensions',
+    !typedMiss.isError && !typedMiss.text.includes('ch01.md'));
+
   // ── delete ─────────────────────────────────────────────────────────
+  const folderRefused = await call('delete_file', { book_token: BOOK, path: 'chapters' });
+  record('deleting a non-empty folder is refused', folderRefused.isError);
+  record('and the refusal says how to say yes', /recursive: true/.test(folderRefused.text));
+
   const deleted = await call('delete_file', { book_token: BOOK, path: 'chapters/ch01.md' });
   record('delete_file', !deleted.isError);
+
+  const folderGone = await call('delete_file', { book_token: BOOK, path: 'world', recursive: true });
+  record('a recursive folder delete lands', !folderGone.isError);
+  record('and it says how many went with it', /item\(s\) inside it were deleted/.test(folderGone.text));
 
   child.kill();
   const failed = results.filter((r) => !r.passed);

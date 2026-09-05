@@ -121,6 +121,46 @@ describe('File Tools', () => {
       expect(call?.[2]).toHaveProperty('book_token');
       expect(call?.[2]).toHaveProperty('path');
       expect(call?.[2]).toHaveProperty('commit_message');
+      // Without this param the server's refusal has no escape hatch and the
+      // model cannot delete a folder at all — the controller reads it, so a
+      // client that never sends it makes the whole feature unreachable.
+      expect(call?.[2]).toHaveProperty('recursive');
+    });
+
+    // The model asked to delete one path; several may have gone. Swallowing
+    // that is the "formally succeeded, quietly did more" shape.
+    it('tells the model when a folder delete took things with it', async () => {
+      const toolSpy = vi.spyOn(server, 'tool');
+      mockClient.deleteFile = vi.fn().mockResolvedValue({
+        commit: { token: 'cmt_1', name: 'Delete folder' },
+        deletedDescendants: 12,
+      });
+
+      registerFileTools(server, mockClient as unknown as SlimaApiClient);
+      const handler = toolSpy.mock.calls.find((c) => c[0] === 'delete_file')?.[4] as (
+        args: Record<string, unknown>
+      ) => Promise<{ content: Array<{ text: string }> }>;
+      const result = await handler({ book_token: 'bk_1', path: 'world', recursive: true });
+
+      expect(result.content[0]!.text).toContain('12 item(s)');
+      expect(result.content[0]!.text).toMatch(/tell the author/i);
+      expect(mockClient.deleteFile).toHaveBeenCalledWith('bk_1', expect.objectContaining({ recursive: true }));
+    });
+
+    it('stays quiet when a plain file is deleted', async () => {
+      const toolSpy = vi.spyOn(server, 'tool');
+      mockClient.deleteFile = vi.fn().mockResolvedValue({
+        commit: { token: 'cmt_1', name: 'Delete file' },
+        deletedDescendants: 0,
+      });
+
+      registerFileTools(server, mockClient as unknown as SlimaApiClient);
+      const handler = toolSpy.mock.calls.find((c) => c[0] === 'delete_file')?.[4] as (
+        args: Record<string, unknown>
+      ) => Promise<{ content: Array<{ text: string }> }>;
+      const result = await handler({ book_token: 'bk_1', path: 'a.md' });
+
+      expect(result.content[0]!.text).not.toMatch(/item\(s\) inside/);
     });
 
     it('should register append_to_file with correct parameters', () => {

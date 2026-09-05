@@ -250,27 +250,50 @@ ${AI_READONLY_WARNING}`,
   // === delete_file ===
   server.tool(
     'delete_file',
-    `Delete a file from a book (creates a new commit).
+    `Delete a file or an empty folder from a book (creates a new commit).
+
+A folder that still has anything inside it is refused unless you pass
+\`recursive: true\`. That is not bureaucracy: deleting only the folder would
+leave its contents with no parent, and the app then shows the whole subtree at
+the book's top level — the author sees their files scattered, with no error.
+Say the word and everything inside goes, and you are told how many.
 ${SCRIPT_STUDIO_WRITE_WARNING}
 ${AI_READONLY_WARNING}`,
     {
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       path: z.string().describe(PATH_PARAM_HINT),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
+      recursive: z
+        .boolean()
+        .optional()
+        .describe('Required to delete a folder that is not empty — everything inside goes with it'),
     },
     { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-    async ({ book_token, path, commit_message }) => {
+    async ({ book_token, path, commit_message, recursive }) => {
       try {
         const result = await client.deleteFile(book_token, {
           path,
           commitMessage: commit_message,
+          recursive,
         });
 
         return {
           content: [
             {
               type: 'text',
-              text: `File deleted successfully.\n\nCommit: ${result.commit.token}\nMessage: ${result.commit.name || result.commit.message}`,
+              text: [
+                'File deleted successfully.',
+                // The model asked to delete one path; several may have gone. It has to
+                // be able to tell the author that.
+                result.deletedDescendants
+                  ? `${result.deletedDescendants} item(s) inside it were deleted too — tell the author.`
+                  : null,
+                '',
+                `Commit: ${result.commit.token}`,
+                `Message: ${result.commit.name || result.commit.message}`,
+              ]
+                .filter((line) => line !== null)
+                .join('\n'),
             },
           ],
         };
@@ -400,7 +423,10 @@ Writing Studio books are unaffected by this filter.`,
     {
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       query: z.string().describe('Search query (e.g., "blue eyes" or "protagonist name")'),
-      file_types: z.array(z.string()).optional().describe('Filter by file types (e.g., ["markdown", "txt"])'),
+      file_types: z
+        .array(z.string())
+        .optional()
+        .describe('Filter by file extension, with or without the dot: ["md", ".txt", "beats"]'),
       limit: z.number().optional().describe('Maximum number of matches to return (default: 20)'),
       include_structured: z
         .boolean()

@@ -607,7 +607,7 @@ export class SlimaApiClient {
    */
   async deleteFile(
     bookToken: string,
-    params: { path: string; commitMessage?: string }
+    params: { path: string; commitMessage?: string; recursive?: boolean }
   ): Promise<McpFileDeleteResponse> {
     return this.request<McpFileDeleteResponse>(
       'POST',
@@ -615,6 +615,7 @@ export class SlimaApiClient {
       {
         path: params.path,
         commit_message: params.commitMessage,
+        recursive: params.recursive,
       }
     );
   }
