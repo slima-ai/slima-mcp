@@ -318,6 +318,13 @@ export interface McpFileVisualizeResponse {
 export interface McpFileCreateResponse {
   commit: Commit;
   fileToken: string;
+  /**
+   * Present when the server replaced what was sent. Currently one case: a
+   * structured type starts as an empty skeleton, so any `content` passed to
+   * `create_file` is not stored. The tool MUST show these — a 201 that quietly
+   * dropped the content leaves the model working from a file it never wrote.
+   */
+  notes?: string[];
 }
 
 export interface McpFileUpdateResponse {

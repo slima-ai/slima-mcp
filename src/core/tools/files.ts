@@ -224,11 +224,17 @@ ${AI_READONLY_WARNING}`,
           ? `Classified as: ${content_type}${content_type === 'manuscript' ? ' (counts toward the word count)' : ' (not counted in the word count)'}`
           : 'Classified by inheriting the parent folder (root-level defaults to reference, which is NOT counted in the word count).';
 
+        // The server replaces the content with an empty skeleton for structured
+        // types and says so in `notes`. Dropping that here would leave the model
+        // with a 201 and the belief that its content is in the file — the exact
+        // silent-success shape this whole surface is built to avoid.
+        const notes = (result.notes ?? []).map((n) => `\n\n⚠️ ${n}`).join('');
+
         return {
           content: [
             {
               type: 'text',
-              text: `File created successfully.\n\nFile Token: ${result.fileToken}\nCommit: ${result.commit.token}\nMessage: ${result.commit.name || result.commit.message}\n${classification}`,
+              text: `File created successfully.\n\nFile Token: ${result.fileToken}\nCommit: ${result.commit.token}\nMessage: ${result.commit.name || result.commit.message}\n${classification}${notes}`,
             },
           ],
         };
