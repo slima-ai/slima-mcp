@@ -69,7 +69,8 @@ async function main() {
   const listed = await send('tools/list', {});
   const tools = (listed.result?.tools ?? []).map((t) => t.name);
   record('tools/list answers', tools.length > 0, `${tools.length} tools`);
-  for (const expected of ['update_beat_board', 'update_timeline', 'update_script']) {
+  for (const expected of ['update_beat_board', 'update_timeline', 'update_script',
+    'update_relationship_map', 'update_world_map']) {
     record(`tool registered: ${expected}`, tools.includes(expected));
   }
 
@@ -225,34 +226,101 @@ async function main() {
     `wordCount=${script.scenes?.[0]?.stats?.wordCount}`);
   record('character element is never linked', script.scenes[0].elements.find((e) => e.type === 'character')?.characterId === null);
 
-  // ── read-only types stay read-only, with the right refusal ─────────
-  const geomapWrite = await call('create_file', { book_token: BOOK, path: 'world/atlas.geomap', content: '{}' });
-  record('.geomap create is refused', geomapWrite.isError);
-  record('.geomap refusal is the type, not the plan', /structured documents|read/i.test(geomapWrite.text));
-
-  const mapWrite = await call('write_file', {
-    book_token: BOOK, path: 'world/relations.map',
-    content: JSON.stringify({ version: '1.0', nodes: [{ id: 'n1', label: '主角', x: 0, y: 0 }], edges: [] }),
+  // ── .map: field-level, and every generic write refused ─────────────
+  const madeMap = await call('create_file', {
+    book_token: BOOK, path: 'world/relations.map', content: '{"nodes":[{"id":"forged"}]}',
   });
-  record('.map whole-file write still works (create first)', mapWrite.isError,
-    'expected refusal: file does not exist yet');
+  record('create_file (.map) makes a skeleton', !madeMap.isError);
+  record('.map create says the content was not stored', madeMap.text.toLowerCase().includes('not stored'));
 
-  await call('create_file', { book_token: BOOK, path: 'world/relations.map' });
-  const mapWrite2 = await call('write_file', {
-    book_token: BOOK, path: 'world/relations.map',
-    content: JSON.stringify({ version: '1.0', nodes: [{ id: 'n1', label: '主角', x: 0, y: 0 }], edges: [] }),
+  const mapBatch = await call('update_relationship_map', {
+    book_token: BOOK, path: 'world/relations.map', intent: '放進兩個人和他們的關係',
+    operations: [
+      { op: 'add_node', label: '沈硯', op_ref: 'N1' },
+      { op: 'add_node', label: '林霜', op_ref: 'N2', position: { near_id: '@N1', direction: 'right' } },
+      { op: 'add_edge', source_id: '@N1', target_id: '@N2', label: '師徒' },
+      { op: 'add_group', label: '書院', member_ids: ['@N1', '@N2'] },
+    ],
   });
-  record('.map whole-file write lands', !mapWrite2.isError, mapWrite2.text.split('\n')[0]);
+  record('update_relationship_map applies a batch', !mapBatch.isError, mapBatch.text.split('\n')[0]);
+  record('.map reports where it placed each node', /placed at \(/.test(mapBatch.text));
 
-  const mapDrop = await call('write_file', {
-    book_token: BOOK, path: 'world/relations.map',
-    content: JSON.stringify({ version: '1.0', nodes: [], edges: [] }),
+  const mapRead = await call('read_file', { book_token: BOOK, path: 'world/relations.map' });
+  const mapDoc = JSON.parse(mapRead.text.split('---')[1].trim());
+  record('.map group box is computed from its members',
+    (mapDoc.groups?.[0]?.width ?? 0) > 0, `width=${mapDoc.groups?.[0]?.width}`);
+  record('.map coordinates are written as JS numbers',
+    !/"x": -?\d+\.0[,\n]/.test(mapRead.text), 'no trailing .0');
+
+  const mapMoveViaUpdate = await call('update_relationship_map', {
+    book_token: BOOK, path: 'world/relations.map', intent: 'x',
+    operations: [{ op: 'update_node', id: mapDoc.nodes[0].id, position: { x: 5, y: 5 } }],
   });
-  record('the guard catches a write that drops a node', mapDrop.isError);
-  record('and it names what would go', mapDrop.text.includes('主角'));
+  record('.map update_node refuses to move', mapMoveViaUpdate.isError && /move_node/.test(mapMoveViaUpdate.text));
 
-  const mapAppend = await call('append_to_file', { book_token: BOOK, path: 'world/relations.map', content: 'x' });
-  record('append to a .map is refused', mapAppend.isError && /whole/i.test(mapAppend.text));
+  const mapCascade = await call('update_relationship_map', {
+    book_token: BOOK, path: 'world/relations.map', intent: '刪掉一個人',
+    operations: [{ op: 'remove_node', id: mapDoc.nodes[0].id }],
+  });
+  record('.map removing a node takes its edges', !mapCascade.isError && /edge\(s\) removed/.test(mapCascade.text));
+
+  for (const [tool, args] of [
+    ['write_file', { content: '{"version":"1.0","nodes":[],"edges":[]}' }],
+    ['append_to_file', { content: 'x' }],
+    ['edit_file', { old_string: 'nodes', new_string: 'x' }],
+  ]) {
+    const refused = await call(tool, { book_token: BOOK, path: 'world/relations.map', ...args });
+    record(`.map ${tool} is refused`, refused.isError);
+    record(`.map ${tool} names update_relationship_map`, refused.text.includes('update_relationship_map'));
+  }
+
+  // ── .geomap: the type that used to be flatly read-only ─────────────
+  const madeGeo = await call('create_file', { book_token: BOOK, path: 'world/atlas.geomap', content: '{}' });
+  record('create_file (.geomap) makes a skeleton', !madeGeo.isError, madeGeo.text.split('\n')[0]);
+
+  const geoBatch = await call('update_world_map', {
+    book_token: BOOK, path: 'world/atlas.geomap', intent: '放一個港口、一條河、一片山',
+    operations: [
+      { op: 'add_place', x: 210, y: 96, name: '星港', tier: 'port' },
+      { op: 'add_label', x: 240, y: 60, text: '寒海', size: 'large' },
+      { op: 'add_river', pts: [[100, 50], [140, 90], [210, 95]] },
+      { op: 'paint_region', layer: 'base', value: 'mount', shape: { type: 'circle', cx: 300, cy: 200, r: 8 } },
+      { op: 'set_meta', title: '北境' },
+    ],
+  });
+  record('update_world_map applies a batch', !geoBatch.isError, geoBatch.text.split('\n')[0]);
+  record('.geomap says how many cells it painted', /painted \d+ cell/.test(geoBatch.text));
+  record('.geomap says the river was smoothed', /smoothed into/.test(geoBatch.text));
+
+  const geoRead = await call('read_file', { book_token: BOOK, path: 'world/atlas.geomap' });
+  record('.geomap read omits the terrain grids', /terrain grid, omitted/.test(geoRead.text));
+  record('.geomap read still shows the places', geoRead.text.includes('星港'));
+
+  const badTier = await call('update_world_map', {
+    book_token: BOOK, path: 'world/atlas.geomap', intent: 'x',
+    operations: [{ op: 'add_place', x: 10, y: 10, tier: 'city' }],
+  });
+  record('.geomap unknown tier is refused', badTier.isError);
+  record('.geomap refusal lists the real tiers', /village/.test(badTier.text) && /dragon/.test(badTier.text));
+
+  const offGrid = await call('update_world_map', {
+    book_token: BOOK, path: 'world/atlas.geomap', intent: 'x',
+    operations: [{ op: 'add_place', x: 900, y: 10, tier: 'town' }],
+  });
+  record('.geomap out-of-grid coordinate is refused', offGrid.isError && /cells, not pixels/.test(offGrid.text));
+
+  const geoWrite = await call('write_file', {
+    book_token: BOOK, path: 'world/atlas.geomap', content: '{"format":"slima-geomap"}',
+  });
+  record('.geomap write_file is refused', geoWrite.isError && geoWrite.text.includes('update_world_map'));
+
+  // ── a type that really has no write path ───────────────────────────
+  const characterWrite = await call('create_file', {
+    book_token: BOOK, path: 'cast/hero.character', content: '{}',
+  });
+  record('.character create is refused', characterWrite.isError);
+  record('.character refusal is the type, not a missing tool',
+    /not AI-writable|editor/i.test(characterWrite.text));
 
   // ── the map viewer ─────────────────────────────────────────────────
   const viz = await call('view_relationship_map', { book_token: BOOK, path: 'world/relations.map' });

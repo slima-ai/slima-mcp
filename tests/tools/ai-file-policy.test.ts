@@ -10,11 +10,18 @@
  * no longer the last line of defence — they are there to stop the model wasting
  * a call, and to stop it concluding a capability does not exist.
  *
- * The other thing that changed: structured types are no longer one bucket.
- * `.beats` / `.timeline` / `.script` have field-level MCP tools, `.map` takes a
- * whole document, `.geomap` really is read-only. The old test asserted all of
- * them appeared in a single `readonly` list — which is exactly how this client
- * came to describe `.map` as unwritable for weeks after it became writable.
+ * The other thing that changed: structured types are no longer one bucket. The
+ * old test asserted all of them appeared in a single `readonly` list — which is
+ * exactly how this client came to describe `.map` as unwritable for weeks after
+ * it became writable.
+ *
+ * ⚠️ 2026-09-06 (second train, same day) — there are now only TWO buckets.
+ * All five structured types have field-level tools, so the whole-document
+ * bucket is gone: a whole-document write is what silently drops the parts of a
+ * file the model was never shown, and it is refused for every one of them.
+ * `.geomap` moved out of `readonly` entirely — its terrain is still machine
+ * encoded, but `paint_region` works in grid cells, so the model never touches
+ * the encoding.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -24,12 +31,16 @@ import { buildBookSchema } from '../../src/core/resources/book_schema.js';
 import type { Book } from '../../src/core/api/types.js';
 
 const WRITE_TOOLS = ['write_file', 'edit_file', 'create_file', 'delete_file', 'append_to_file'];
-/** Genuinely unwritable by any tool — `.geomap`'s terrain is machine-encoded. */
-const READONLY_EXTENSIONS = ['.geomap', '.character', '.location', '.json'];
+/** Genuinely unwritable by any tool — Slima's own editors own the format. */
+const READONLY_EXTENSIONS = ['.character', '.location', '.json'];
 /** Writable, but only through the named field-level tool. */
-const FIELD_LEVEL = { '.beats': 'update_beat_board', '.timeline': 'update_timeline', '.script': 'update_script' };
-/** Writable, but only as a complete document. */
-const WHOLE_FILE_EXTENSIONS = ['.map'];
+const FIELD_LEVEL = {
+  '.beats': 'update_beat_board',
+  '.timeline': 'update_timeline',
+  '.script': 'update_script',
+  '.map': 'update_relationship_map',
+  '.geomap': 'update_world_map',
+};
 
 describe('AI file-type policy is visible to the model', () => {
   let descriptions: Map<string, string>;
@@ -65,11 +76,10 @@ describe('AI file-type policy is visible to the model', () => {
     }
   });
 
-  it.each(WRITE_TOOLS)('%s says .map takes a whole document rather than a partial edit', (tool) => {
-    const description = descriptions.get(tool)!;
-
-    for (const ext of WHOLE_FILE_EXTENSIONS) expect(description).toContain(ext);
-    expect(description).toMatch(/whole document/i);
+  // Replaces "says .map takes a whole document": that bucket no longer exists,
+  // and leaving the phrase in would teach a route the server now refuses.
+  it.each(WRITE_TOOLS)('%s no longer offers a whole-document route for any structured type', (tool) => {
+    expect(descriptions.get(tool)).not.toMatch(/whole document/i);
   });
 
   // The client ships with the app; Rails deploys on its own clock. When the two
@@ -103,7 +113,6 @@ describe('book schema resource carries the same policy', () => {
       ai_file_policy: {
         readonly: string[];
         writable: string[];
-        whole_file_only: string[];
         field_level_tools: Record<string, string>;
         authority: string;
         viewers: Record<string, string>;
@@ -115,10 +124,9 @@ describe('book schema resource carries the same policy', () => {
       expect(schema.ai_file_policy.readonly).toContain(ext);
     }
 
-    // The three buckets must stay separate — merging them back is the drift.
+    // The buckets must stay separate — merging them back is the drift.
     expect(schema.ai_file_policy.field_level_tools).toEqual(FIELD_LEVEL);
-    expect(schema.ai_file_policy.whole_file_only).toEqual(WHOLE_FILE_EXTENSIONS);
-    for (const ext of [...Object.keys(FIELD_LEVEL), ...WHOLE_FILE_EXTENSIONS]) {
+    for (const ext of Object.keys(FIELD_LEVEL)) {
       expect(schema.ai_file_policy.readonly).not.toContain(ext);
     }
 

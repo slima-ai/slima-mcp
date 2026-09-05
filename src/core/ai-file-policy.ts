@@ -36,33 +36,27 @@ export const AI_WRITABLE_EXTENSIONS = ['.md', '.markdown', '.txt'] as const;
  *
  * These are NOT read-only: saying so would hide a capability (the failure this
  * file's header describes, in the direction that costs the author money).
+ *
+ * All five landed together on 2026-09-06. Before that, `.map` and `.beats` took
+ * a whole-document `write_file` and the other three were refused outright — two
+ * different half-answers to the same question. A whole-document write is what
+ * loses the parts of a file the model was never shown, so it is gone: the server
+ * now refuses every generic write on these and names the tool below in the
+ * refusal.
  */
 export const AI_STRUCTURED_TOOLS: Record<string, string> = {
   '.beats': 'update_beat_board',
   '.timeline': 'update_timeline',
   '.script': 'update_script',
+  '.map': 'update_relationship_map',
+  '.geomap': 'update_world_map',
 };
 
 /**
- * Structured types the server still takes as a WHOLE document.
- *
- * `.map` is writable (the author's ruling, 2026-08-22) but only whole-file:
- * `edit_file` and `append_to_file` are refused because a partial edit of JSON
- * breaks it. Send the complete document back, including every node id you read
- * — an omitted node is a deleted node, and the author sees a character vanish
- * with no error anywhere.
- */
-export const AI_WHOLE_FILE_EXTENSIONS = ['.map'] as const;
-
-/**
- * No write tool may touch these.
- *
- * `.geomap` is here because its terrain is machine-encoded (RLE+base64) and
- * hand-written JSON will not decode — that is a property of the format, not a
- * policy that might be relaxed. The rest are owned by Slima's own editors.
+ * No write tool may touch these — Slima's own editors own their format, and
+ * there is no field-level route either.
  */
 export const AI_READONLY_EXTENSIONS = [
-  '.geomap',
   '.character',
   '.location',
   '.json',
@@ -84,7 +78,6 @@ export const AI_WRITE_POLICY_NOTE = `
 - Field-level tools only: ${Object.entries(AI_STRUCTURED_TOOLS)
   .map(([ext, tool]) => `\`${ext}\` → \`${tool}\``)
   .join(', ')}
-- Whole document only (no \`edit_file\`, no \`append_to_file\`): ${AI_WHOLE_FILE_EXTENSIONS.map((e) => `\`${e}\``).join(', ')}
 - Not writable at all: ${AI_READONLY_EXTENSIONS.map((e) => `\`${e}\``).join(', ')}
 
 A refusal names the file type and what to do instead — it is information, not

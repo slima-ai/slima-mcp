@@ -17,7 +17,6 @@ import type { Book } from '../api/types.js';
 import {
   AI_READONLY_EXTENSIONS,
   AI_STRUCTURED_TOOLS,
-  AI_WHOLE_FILE_EXTENSIONS,
   AI_STRUCTURED_VIEWERS,
   AI_WRITABLE_EXTENSIONS,
 } from '../ai-file-policy.js';
@@ -119,16 +118,17 @@ export function buildBookSchema(book: Book): Record<string, unknown> {
       // is what made this resource tell the model `.map` could not be written
       // for weeks after it could, and never mention `.beats` at all.
       field_level_tools: AI_STRUCTURED_TOOLS,
-      whole_file_only: [...AI_WHOLE_FILE_EXTENSIONS],
       readonly: [...AI_READONLY_EXTENSIONS],
       readonly_note:
         'Read-only means the AI must not write these via write_file / edit_file / create_file / ' +
         'append_to_file / delete_file. Slima owns their structure; overwriting one corrupts it for the ' +
         'author. Recommend changes in words and point the author at that file type\'s editor.',
-      whole_file_note:
-        'Writable, but only as a COMPLETE document: edit_file and append_to_file are refused because ' +
-        'a partial edit of JSON breaks it. Send back every id you read — an omitted node is a deleted ' +
-        'node, and the author sees it vanish with no error.',
+      field_level_note:
+        'These take one change at a time through the tool named above. Every generic write is refused ' +
+        '(write_file / edit_file / append_to_file), because a whole-document write drops the parts of ' +
+        'the file you were never shown — a beat board loses its chapter cards, a relationship map loses ' +
+        'a character, and nothing reports it. create_file works: it writes an empty document of the ' +
+        'right shape and ignores the content you send, so you then fill it in with the tool.',
       // ⚠️ This block ships with the client and can lag a Rails deploy.
       // `get_capabilities` is derived from the contract Rails enforces; when the
       // two disagree, that one is right.

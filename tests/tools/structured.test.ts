@@ -47,7 +47,13 @@ describe('Structured file tools', () => {
   });
 
   it('registers one tool per structured type', () => {
-    expect([...registered.keys()]).toEqual(['update_beat_board', 'update_timeline', 'update_script']);
+    expect([...registered.keys()]).toEqual([
+      'update_beat_board',
+      'update_timeline',
+      'update_script',
+      'update_relationship_map',
+      'update_world_map',
+    ]);
   });
 
   // The desktop agent decides whether to ask a human by the verb prefix.

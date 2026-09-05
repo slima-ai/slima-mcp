@@ -45,6 +45,8 @@ interface StructuredType {
   ops: string;
   /** A concrete batch, in this type's language. */
   example: string;
+  /** Rules that belong to this type alone. Omit when the shared ones are enough. */
+  extra?: string;
 }
 
 const TYPES: StructuredType[] = [
@@ -72,6 +74,42 @@ const TYPES: StructuredType[] = [
     example:
       '{"op": "add_scene", "interior": true, "location": "HARBOUR", "op_ref": "S1"}, ' +
       '{"op": "add_element", "scene_id": "@S1", "type": "action", "text": "The fog lifts."}',
+  },
+  {
+    tool: 'update_relationship_map',
+    extension: '.map',
+    noun: 'relationship map',
+    ops:
+      'add_node, update_node, move_node, remove_node, add_edge, update_edge, remove_edge, ' +
+      'add_group, update_group, remove_group, set_meta',
+    example:
+      '{"op": "add_node", "label": "Lin Shuang", "op_ref": "N1", ' +
+      '"position": {"near_id": "<id of Shen Yan>", "direction": "right"}}, ' +
+      '{"op": "add_edge", "source_id": "<id of Shen Yan>", "target_id": "@N1", "label": "mentor"}',
+    extra:
+      '**Position is content here, not layout.** `update_node` will not move anything — that is\n' +
+      '`move_node`, so that "I moved her next to him" is its own reviewable change. Prefer\n' +
+      '`{near_id, direction}` over computing numbers. Existing nodes never move; the final\n' +
+      'coordinates come back in the notes. Group boxes are computed from `member_ids` — never\n' +
+      'send x/y/width/height. Removing a node removes its edges, and you are told so.',
+  },
+  {
+    tool: 'update_world_map',
+    extension: '.geomap',
+    noun: 'world map',
+    ops:
+      'add_place, update_place, add_label, update_label, remove_element, add_river, ' +
+      'add_border, paint_region, set_meta',
+    example:
+      '{"op": "add_place", "x": 210, "y": 96, "name": "Starhaven", "tier": "port"}, ' +
+      '{"op": "add_label", "x": 240, "y": 60, "text": "The Cold Sea", "size": "large"}',
+    extra:
+      '**Coordinates are grid cells, not pixels**: x 0-519, y 0-363. `read_file` gives you the\n' +
+      'map with its three terrain grids replaced by a note — they are machine-encoded and you\n' +
+      'do not need them; `paint_region` works in cells. `remove_element` takes any element id\n' +
+      '(`pl_` place, `lb_` label, `rv_` river, `bd_` border). Terrain has no undo: paint over it\n' +
+      'instead. Move a place with `update_place`, never by removing and re-adding it. An unknown\n' +
+      'place `tier` is refused with the full list of real ones — read the error, do not guess.',
   },
 ];
 
@@ -109,7 +147,7 @@ document you were never shown.
 
 Operations: ${type.ops}
 Example \`operations\`: [${type.example}]
-${SHARED_RULES}`;
+${SHARED_RULES}${type.extra ? `\n\n${type.extra}` : ''}`;
 }
 
 function render(type: StructuredType, result: McpStructuredResponse): string {
