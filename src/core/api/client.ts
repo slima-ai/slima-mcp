@@ -30,6 +30,7 @@ import {
   type McpFileAppendResponse,
   type McpSearchResponse,
   type McpFileVisualizeResponse,
+  type McpStructuredResponse,
   type BooksPage,
   type PaginationMeta,
 } from './types.js';
@@ -548,6 +549,25 @@ export class SlimaApiClient {
         content: params.content,
         commit_message: params.commitMessage,
       }
+    );
+  }
+
+  /**
+   * Field-level operations on a structured file — the ONLY write path for
+   * `.beats` / `.timeline` / `.script`.
+   *
+   * One endpoint takes every type; the type comes from the path's extension.
+   * The separate tool names on this side exist because a tool that writes must
+   * start with a verb, or the desktop agent will not know to ask the human.
+   */
+  async applyStructuredOps(
+    bookToken: string,
+    params: { path: string; intent: string; operations: Array<Record<string, unknown>> }
+  ): Promise<McpStructuredResponse> {
+    return this.request<McpStructuredResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/structured`,
+      { path: params.path, intent: params.intent, operations: params.operations }
     );
   }
 

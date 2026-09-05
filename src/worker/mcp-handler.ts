@@ -16,6 +16,7 @@ import {
   registerContentTools,
   registerBetaReaderTools,
   registerFileTools,
+  registerStructuredTools,
 } from '../core/tools/index.js';
 import { registerBookSchemaResource } from '../core/resources/index.js';
 import { SERVER_INSTRUCTIONS } from '../core/server-instructions.js';
@@ -71,6 +72,7 @@ export async function handleMcpRequest(
   registerContentTools(server, client);
   registerBetaReaderTools(server, client, logger);
   registerFileTools(server, client);
+  registerStructuredTools(server, client);
 
   // Register resources (per-book schema via URI template)
   registerBookSchemaResource(server, client);

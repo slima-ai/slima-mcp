@@ -322,6 +322,34 @@ export interface McpFileCreateResponse {
 
 export interface McpFileUpdateResponse {
   commit: Commit;
+  /**
+   * Present when the server replaced what was sent — currently only when
+   * `create_file` makes an empty skeleton for a structured type. The tool MUST
+   * surface these: a 201 that silently dropped the content is the worst shape
+   * of failure, because the model then works from a file it thinks it wrote.
+   */
+  notes?: string[];
+}
+
+/** One operation the server applied, with the id it created (if any). */
+export interface McpStructuredApplied {
+  op: string;
+  id?: string;
+  op_ref?: string;
+}
+
+export interface McpStructuredResponse {
+  commit: Commit;
+  /**
+   * New ids, in operation order. Without these the model has to re-read the
+   * whole file just to learn what it just made.
+   */
+  applied: McpStructuredApplied[];
+  /**
+   * Side effects the model did not ask for but the author will notice —
+   * "removing this act left 3 beats unassigned". Not errors; things to relay.
+   */
+  notes: string[];
 }
 
 export interface McpFileEditResponse {

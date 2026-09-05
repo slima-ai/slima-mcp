@@ -16,6 +16,8 @@ import type { SlimaApiClient } from '../api/client.js';
 import type { Book } from '../api/types.js';
 import {
   AI_READONLY_EXTENSIONS,
+  AI_STRUCTURED_TOOLS,
+  AI_WHOLE_FILE_EXTENSIONS,
   AI_STRUCTURED_VIEWERS,
   AI_WRITABLE_EXTENSIONS,
 } from '../ai-file-policy.js';
@@ -113,11 +115,24 @@ export function buildBookSchema(book: Book): Record<string, unknown> {
     // separate, additional restriction.
     ai_file_policy: {
       writable: [...AI_WRITABLE_EXTENSIONS],
+      // Structured types are not one bucket. Collapsing them into `readonly`
+      // is what made this resource tell the model `.map` could not be written
+      // for weeks after it could, and never mention `.beats` at all.
+      field_level_tools: AI_STRUCTURED_TOOLS,
+      whole_file_only: [...AI_WHOLE_FILE_EXTENSIONS],
       readonly: [...AI_READONLY_EXTENSIONS],
       readonly_note:
         'Read-only means the AI must not write these via write_file / edit_file / create_file / ' +
         'append_to_file / delete_file. Slima owns their structure; overwriting one corrupts it for the ' +
         'author. Recommend changes in words and point the author at that file type\'s editor.',
+      whole_file_note:
+        'Writable, but only as a COMPLETE document: edit_file and append_to_file are refused because ' +
+        'a partial edit of JSON breaks it. Send back every id you read — an omitted node is a deleted ' +
+        'node, and the author sees it vanish with no error.',
+      // ⚠️ This block ships with the client and can lag a Rails deploy.
+      // `get_capabilities` is derived from the contract Rails enforces; when the
+      // two disagree, that one is right.
+      authority: 'get_capabilities',
       viewers: AI_STRUCTURED_VIEWERS,
     },
     structured_file_types: isScript

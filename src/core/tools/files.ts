@@ -9,7 +9,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
 import { formatErrorForMcp } from '../utils/errors.js';
 import { renderFileRead } from './file-read-rendering.js';
-import { AI_READONLY_EXTENSIONS } from '../ai-file-policy.js';
+import { AI_WRITE_POLICY_NOTE } from '../ai-file-policy.js';
 
 // Studio-aware write rules shown on every write tool description + path param.
 // Rails (`Mcp::FileOperationService#validate_studio_write_path!`) enforces this
@@ -36,15 +36,12 @@ Always check \`book_type\` via \`list_books\` or \`get_book\` before writing to 
 // system prompt and is blocked client-side when it forgets. An external agent
 // gets neither, so without this text it will "helpfully" overwrite a `.map` with
 // prose and corrupt the author's relationship graph.
-const AI_READONLY_WARNING = `
-**Do not write these file types.** They are structured documents that Slima's
-editors own, and the AI file policy marks them read-only:
-${AI_READONLY_EXTENSIONS.map((e) => `\`${e}\``).join(', ')}.
-Writing prose or hand-edited JSON into one corrupts it for the author.
-To read a \`.map\`, call \`view_relationship_map\` — it returns a picture plus a
-readable cast/relationship list, instead of raw ids and pixel coordinates.
-If the author asks for a change to one of these, describe the change in words and
-point them at that file type's editor in the Slima app.`;
+// The write policy now lives in ai-file-policy.ts as one composed paragraph.
+// It used to be assembled here from AI_READONLY_EXTENSIONS alone, which is how
+// `.map` came to be described as read-only for weeks after it became writable
+// and `.beats` came to be described not at all: a list of "the read-only ones"
+// cannot express "writable, but only whole-file" or "writable, via this tool".
+const AI_READONLY_WARNING = AI_WRITE_POLICY_NOTE;
 
 // Slima classifies every file as manuscript or reference (plus intrinsic planner
 // labels). ONLY manuscript counts toward the author's word count, writing streak,
