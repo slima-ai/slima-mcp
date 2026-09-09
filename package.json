@@ -22,7 +22,7 @@
     "dev": "tsup --watch",
     "dev:worker": "wrangler dev",
     "deploy:worker": "npm run build:worker && wrangler deploy",
-    "deploy:worker:preview": "npm run build:worker && wrangler deploy --env preview",
+    "deploy:worker:test": "npm run build:worker && wrangler deploy --env test",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",

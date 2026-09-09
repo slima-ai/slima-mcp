@@ -24,18 +24,17 @@ OAUTH_CLIENT_ID = "slima-mcp-worker"
 binding = "OAUTH_KV"
 id = "24cf517e9e5e48e8903924e01cc0d1a2"
 
-# Preview environment (for development)
-[env.preview]
-name = "slima-mcp-preview"
-vars = { SLIMA_API_URL = "https://staging-api.slima.ai", OAUTH_CLIENT_ID = "slima-mcp-worker-dev" }
-
-[[env.preview.kv_namespaces]]
-binding = "OAUTH_KV"
-id = "your-preview-kv-namespace-id"  # Replace after `wrangler kv:namespace create OAUTH_KV --preview`
-
-# Development environment
+# Development environment — for `wrangler dev --env dev` against a local Rails.
+# NOT a deploy target: SLIMA_API_URL points at localhost, and its KV id is a placeholder.
+# `routes` is set explicitly to [] for the same reason [env.test] sets it explicitly:
+# routes is an INHERITABLE key, so leaving it out would inherit the top-level
+# mcp.slima.ai custom domain and a stray `wrangler deploy --env dev` would take
+# prod's domain over. (2026-09-09: [env.preview] had exactly this shape and was
+# documented in the README as the normal "Staging" command.)
 [env.dev]
 name = "slima-mcp-dev"
+routes = []
+workers_dev = true
 vars = { SLIMA_API_URL = "http://localhost:3000", OAUTH_CLIENT_ID = "slima-mcp-worker-dev" }
 
 [[env.dev.kv_namespaces]]

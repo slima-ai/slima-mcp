@@ -303,8 +303,8 @@ npm run dev:worker
 # Deploy to Cloudflare
 npm run deploy:worker
 
-# Deploy to preview environment
-npm run deploy:worker:preview
+# Deploy to the test environment (test-mcp.slima.ai)
+npm run deploy:worker:test
 ```
 
 ### Project Structure
@@ -352,12 +352,32 @@ git checkout main && git merge dev && git push
 
 ### Cloudflare Worker (Manual)
 
-Worker deployment is separate from npm. Deploy after code changes:
+**Worker deployment is separate from npm, and nothing triggers it automatically.**
+Publishing to npm does NOT update `mcp.slima.ai`. Remote clients (claude.ai /
+ChatGPT connectors) talk to the Worker, so they keep running the old tool set
+until someone runs this by hand:
 
 ```bash
-npm run deploy:worker           # Production (mcp.slima.ai)
-npm run deploy:worker:preview   # Staging
+npm run deploy:worker:test   # Test  (test-mcp.slima.ai -> test-api.slima.ai)
+npm run deploy:worker        # Prod  (mcp.slima.ai      -> api.slima.ai)
 ```
+
+Deploy test first and check `curl https://test-mcp.slima.ai/ | jq .version`
+before doing prod; the same one-liner against `mcp.slima.ai` is how you tell
+whether the Worker is behind npm at all.
+
+> 2026-09-09: the Worker sat on 0.2.0 for four and a half months — it was last
+> deployed the same day npm 0.2.0 shipped, so every change after that reached
+> npm users and no connector users. There is no alarm for this; the version
+> endpoint is the only signal.
+
+> There used to be a `deploy:worker:preview` script pointing at an `[env.preview]`
+> block. It was removed on 2026-09-09: its KV id was the literal placeholder
+> string, `staging-api.slima.ai` does not resolve, and — worst — it defined no
+> `routes`. `routes` is an *inheritable* key in wrangler, so that command would
+> have inherited the top-level `mcp.slima.ai` custom domain and pointed
+> **production's hostname** at the preview Worker. The real staging environment
+> is `[env.test]`.
 
 ### MCP Registry (Manual)
 
