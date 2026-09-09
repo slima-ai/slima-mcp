@@ -22,21 +22,38 @@ jobs:
       - name: Check if version changed
         id: version
         run: |
-          # 取得當前和前一個 commit 的版本
+          NAME=$(node -p "require('./package.json').name")
           CURRENT=$(node -p "require('./package.json').version")
-          git checkout HEAD~1 -- package.json 2>/dev/null || true
-          PREVIOUS=$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
-          git checkout HEAD -- package.json
-
           echo "current=$CURRENT" >> $GITHUB_OUTPUT
-          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
 
-          if [ "$CURRENT" != "$PREVIOUS" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "📦 Version changed: $PREVIOUS → $CURRENT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手動觸發＝明確「現在發這一版」的意圖，不要拿 HEAD~1 來否決它。
+            # 重跑通常發生在版本 commit 上面又疊了無關 commit 的時候
+            # （2026-09-09：修 workflow 本身），那時 HEAD 與 HEAD~1 的版本
+            # 相同 ⇒ 舊的比法會靜默跳過整個 job，看起來「成功」但什麼都沒發。
+            # 唯一有意義的比較對象是 registry 上真正存在的版本。
+            PUBLISHED=$(npm view "$NAME" version 2>/dev/null || echo "none")
+            echo "previous=$PUBLISHED" >> $GITHUB_OUTPUT
+            if [ "$CURRENT" != "$PUBLISHED" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "📦 Manual dispatch: npm has $PUBLISHED, publishing $CURRENT"
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "⏭️ Manual dispatch: $CURRENT is already on npm"
+            fi
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Version unchanged: $CURRENT"
+            # push 觸發：只在這一顆 commit 真的動了版本號時才發。
+            git checkout HEAD~1 -- package.json 2>/dev/null || true
+            PREVIOUS=$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
+            git checkout HEAD -- package.json
+            echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+            if [ "$CURRENT" != "$PREVIOUS" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "📦 Version changed: $PREVIOUS → $CURRENT"
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "⏭️ Version unchanged: $CURRENT"
+            fi
           fi
 
       - name: Setup Node.js
