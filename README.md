@@ -137,18 +137,40 @@ Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens) o
 gemini mcp add slima --command "npx -y slima-mcp@0"
 ```
 
-> **Why `slima-mcp@0` instead of `slima-mcp` / `slima-mcp@latest`?** Using `@0` pins to the current major version — npx still fetches new `0.x.y` releases automatically (so you get features + bug fixes), but when we ship `1.0.0` with breaking changes you won't silently pick it up without updating your config. We'll announce the `@1` switch in the release notes.
+> **Why `slima-mcp@0` instead of `slima-mcp` / `slima-mcp@latest`?** Using `@0` pins to the current major version — npx fetches new `0.x.y` releases automatically (so you get features + bug fixes), but when we ship `1.0.0` with breaking changes you won't silently pick it up without updating your config. We'll announce the `@1` switch in the release notes.
+>
+> ⚠️ **This only holds if you do not also have a global `slima-mcp` install.** `npx pkg@<range>`
+> will happily satisfy the range from a package already on your `PATH` and never contact the
+> registry at all. Measured on 2026-09-09 with a global `0.2.0` present and `0.3.0` on npm:
+>
+> | command | resolved |
+> |---|---|
+> | `npx -y slima-mcp@0` | **0.2.0** — used the global install |
+> | `npx -y slima-mcp` | **0.2.0** — same |
+> | `npx -y slima-mcp@latest` | 0.3.0 — a dist-tag forces a registry lookup |
+> | `npx -y slima-mcp@0.3.0` | 0.3.0 — the global can't satisfy an exact newer version |
+>
+> So a stale global install makes the npx form silently stop upgrading, while the server keeps
+> telling you to upgrade. Remove it — see below.
 
 #### Migrating from a global install
 
 If you already installed globally with `npm install -g slima-mcp`:
 
 ```bash
-# Remove the old global install (optional but cleaner)
+# Remove the old global install — REQUIRED, not just tidiness.
+# Leaving it in place makes `npx -y slima-mcp@0` resolve to the old global copy
+# forever (see the warning above), so you'd stay outdated while being told to upgrade.
 npm uninstall -g slima-mcp
 
-# Change your config `command` from "slima-mcp" to the npx form above, and restart the client.
+# Then change your config `command` from "slima-mcp" to the npx form above, and restart the client.
+# Verify: `npx -y slima-mcp@0 --version` must print the version shown by `npm view slima-mcp version`.
 ```
+
+⚠️ Check **every** place you may have installed it. A global install can exist per Node version
+manager environment and per OS — on WSL setups it is common to have one under `nvm` *and* one
+under Windows' `AppData/Roaming/npm`, at two different versions, with only one of them on the
+`PATH` your MCP client actually uses.
 
 Or, if you want to stay on a global install, remember to periodically run:
 
