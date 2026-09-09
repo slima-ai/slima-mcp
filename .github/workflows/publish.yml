@@ -60,9 +60,27 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Trusted publishing (OIDC) needs npm >= 11.5.1, which ships with
+          # Node 24. Node 20 carries npm 10.x and would silently fall back to
+          # looking for a token.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+
+      - name: Ensure npm supports trusted publishing
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          # Don't trust the bundled version — assert it. A too-old npm does not
+          # say "OIDC unsupported"; it quietly falls back to token auth and
+          # fails with an auth error that points at the wrong problem.
+          npm install -g npm@latest
+          HAVE=$(npm --version)
+          NEED=11.5.1
+          echo "npm $HAVE (need >= $NEED)"
+          if [ "$(printf '%s\n%s\n' "$NEED" "$HAVE" | sort -V | head -1)" != "$NEED" ]; then
+            echo "::error::npm $HAVE is older than $NEED — trusted publishing (OIDC) unavailable"
+            exit 1
+          fi
 
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
@@ -78,9 +96,10 @@ jobs:
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # No NODE_AUTH_TOKEN: this publishes via trusted publishing (OIDC),
+        # configured on npmjs.com against slima-ai/slima-mcp + publish.yml.
+        # Provenance is generated automatically, so --provenance is redundant.
+        run: npm publish --access public
 
       - name: Create and push tag
         if: steps.version.outputs.changed == 'true'
