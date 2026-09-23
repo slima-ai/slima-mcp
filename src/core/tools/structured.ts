@@ -41,6 +41,11 @@ interface StructuredType {
   extension: string;
   /** What the author calls it. */
   noun: string;
+  /**
+   * One line right after the opening sentence, for a type whose extension says the
+   * wrong thing: `.map` reads like a geographic map but is the relationship graph (d11).
+   */
+  what?: string;
   /** The operations this type accepts, for the description. */
   ops: string;
   /** A concrete batch, in this type's language. */
@@ -79,6 +84,9 @@ const TYPES: StructuredType[] = [
     tool: 'update_relationship_map',
     extension: '.map',
     noun: 'relationship map',
+    what:
+      '**This is the character relationship graph (關係圖) — not a geographic map.** A world map\n' +
+      '(地圖) is `.geomap`, changed with `update_world_map`.',
     ops:
       'add_node, update_node, move_node, remove_node, add_edge, update_edge, remove_edge, ' +
       'add_group, update_group, remove_group, set_meta',
@@ -97,6 +105,9 @@ const TYPES: StructuredType[] = [
     tool: 'update_world_map',
     extension: '.geomap',
     noun: 'world map',
+    what:
+      '**This is the geographic world map (地圖).** A character relationship graph (關係圖) is\n' +
+      '`.map`, changed with `update_relationship_map`.',
     ops:
       'add_place, update_place, add_label, update_label, remove_element, add_river, ' +
       'add_border, paint_region, set_meta',
@@ -139,7 +150,7 @@ lands in the author's version history immediately. Say what you changed, not
 "please confirm it".`;
 
 function describe(type: StructuredType): string {
-  return `Change a Slima ${type.noun} (\`${type.extension}\`) one field at a time.
+  return `Change a Slima ${type.noun} (\`${type.extension}\`) one field at a time.${type.what ? `\n\n${type.what}` : ''}
 
 This is the ONLY way to write this file type — \`write_file\` and \`edit_file\`
 are refused for it, because a whole-file write would drop the parts of the

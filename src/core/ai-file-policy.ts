@@ -79,6 +79,7 @@ export const AI_WRITE_POLICY_NOTE = `
   .map(([ext, tool]) => `\`${ext}\` → \`${tool}\``)
   .join(', ')}
 - Not writable at all: ${AI_READONLY_EXTENSIONS.map((e) => `\`${e}\``).join(', ')}
+- \`.map\` is the character relationship graph (關係圖) — not a geographic map; \`.geomap\` is the world map (地圖).
 
 A refusal names the file type and what to do instead — it is information, not
 an obstacle to route around. Call \`get_capabilities\` for the authoritative

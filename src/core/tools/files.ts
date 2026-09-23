@@ -353,7 +353,7 @@ Use this instead of \`read_file\` for \`.map\` files: their raw JSON is node ids
 The summary lists every character, every relationship ("A —childhood friends→ B") and any faction groups,
 so it is useful even in clients that do not display images.
 
-\`.map\` files are read-only to AI — describe changes you recommend in words; the author edits them in the map editor.`,
+To change one, use \`update_relationship_map\` (one field at a time). A \`.map\` is the relationship graph (關係圖), not a geographic map — that is \`.geomap\`.`,
     {
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       path: z.string().describe('Path to a .map file (e.g., "world/relations.map")'),
