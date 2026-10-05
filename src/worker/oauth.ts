@@ -158,6 +158,98 @@ function pageTemplate(options: {
 </html>`;
 }
 
+/**
+ * Where an AI-client flow may be sent by the interstitial page below.
+ *
+ * A 302 to `javascript:…` is inert; a page that navigates there by script, meta refresh
+ * or an <a href> is script execution on mcp.slima.ai. So the page is only ever used for
+ * https and loopback http — everything else keeps the plain 302 it always had.
+ */
+export function isPageNavigable(target: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(target);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  if (url.protocol === 'http:') {
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  }
+  return false;
+}
+
+// JSON.stringify alone leaves `</script>` and U+2028/2029 able to end the script element.
+function jsStringLiteral(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Send the browser back to the AI client from /callback.
+ *
+ * NOT a 302, on purpose. The Rails consent page is a <form method="post">, and Chromium
+ * applies that page's CSP `form-action` to EVERY hop of the redirect chain that follows the
+ * submission. Rails can only allow the hop it knows about (this Worker); the hop from here to
+ * the client (claude.ai, a loopback port, …) is not on its list, so the browser dropped it —
+ * after this handler had already consumed the state and redeemed the Rails code. The user was
+ * left on the consent page, pressed Authorize again, and got "authorization session has expired".
+ * Prod, 2026-09-14 → 10-05: 59 tokens minted, 0 ever used.
+ *
+ * A 200 ends the form-submission navigation; the page then starts a new one of its own, which
+ * no other page's CSP governs.
+ *
+ * `target` is always built from the redirect_uri stored for THIS state at /authorize.
+ */
+export function clientRedirectResponse(target: string): Response {
+  if (!isPageNavigable(target)) {
+    return new Response(null, { status: 302, headers: { Location: target, 'Cache-Control': 'no-store' } });
+  }
+
+  const nonce = base64UrlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  const safeHref = escapeHtml(target);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Returning to your app - Slima</title>
+  <noscript><meta http-equiv="refresh" content="0;url=${safeHref}"></noscript>
+  <style>body{font-family:system-ui,sans-serif;background:#FBFBFA;color:#111;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:22rem;padding:2rem;text-align:center}a{color:#111}</style>
+</head>
+<body>
+  <main>
+    <p>Returning to your app…</p>
+    <p><a id="continue" href="${safeHref}" rel="noreferrer">Continue</a> if nothing happens.</p>
+  </main>
+  <script nonce="${nonce}">window.location.replace(${jsStringLiteral(target)});</script>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // The URL carries an authorization code: never cache it, never leak it as a referrer.
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      // No form on this page, so no `form-action` to trip over; the nonce is what lets the
+      // one inline script run. Navigation itself is not something CSP restricts.
+      'Content-Security-Policy':
+        `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'`,
+    },
+  });
+}
+
+// How long /callback remembers that a state was already used (same as the state's own TTL).
+const CONSUMED_STATE_TTL = 600;
+
 export function createOAuthRoutes(app: OAuthApp) {
   // CORS configuration for AI platforms
   app.use('/auth/*', cors({
@@ -230,6 +322,7 @@ export function createOAuthRoutes(app: OAuthApp) {
         // AI client flow - redirect back with error
         const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
         await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+        await markStateConsumed(c.env.OAUTH_KV, state);
 
         const callbackUrl = new URL(oauthReq.redirectUri);
         callbackUrl.searchParams.set('error', error);
@@ -237,7 +330,7 @@ export function createOAuthRoutes(app: OAuthApp) {
           callbackUrl.searchParams.set('error_description', errorDescription);
         }
         callbackUrl.searchParams.set('state', oauthReq.originalState);
-        return c.redirect(callbackUrl.toString());
+        return clientRedirectResponse(callbackUrl.toString());
       }
 
       // Browser flow - show error page
@@ -261,6 +354,7 @@ export function createOAuthRoutes(app: OAuthApp) {
       // ================================================================
       const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
       await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+      await markStateConsumed(c.env.OAUTH_KV, state);
 
       logger.info('AI client callback', {
         clientId: oauthReq.clientId,
@@ -296,7 +390,7 @@ export function createOAuthRoutes(app: OAuthApp) {
         callbackUrl.searchParams.set('error', errorData.error || 'server_error');
         callbackUrl.searchParams.set('error_description', errorData.error_description || 'Token exchange failed');
         callbackUrl.searchParams.set('state', oauthReq.originalState);
-        return c.redirect(callbackUrl.toString());
+        return clientRedirectResponse(callbackUrl.toString());
       }
 
       const tokenData = await tokenResponse.json() as {
@@ -332,7 +426,21 @@ export function createOAuthRoutes(app: OAuthApp) {
       callbackUrl.searchParams.set('code', workerCode);
       callbackUrl.searchParams.set('state', oauthReq.originalState);
 
-      return c.redirect(callbackUrl.toString());
+      return clientRedirectResponse(callbackUrl.toString());
+    }
+
+    // A second arrival on a state this handler already finished: the back button, a reload,
+    // or a second press of Authorize on a consent page that was left open. It used to fall
+    // through to "authorization session has expired", which sent people looking for a timeout
+    // that was not there. Nothing is replayed — the code issued the first time stays single-use.
+    if (state && (await c.env.OAUTH_KV.get(`oauth_done:${state}`))) {
+      logger.info('Callback on an already-used state', { state: state.slice(0, 8) });
+      return c.html(pageTemplate({
+        title: 'Already Used',
+        heading: 'This authorization was already used',
+        message: 'Go back to Claude (or your AI app) and click Connect again to start a new one.',
+        isSuccess: false,
+      }), 400);
     }
 
     // ================================================================
@@ -716,6 +824,12 @@ export function createOAuthRoutes(app: OAuthApp) {
       return oauthErrorResponse('server_error', 'Failed to register client', 500);
     }
   });
+}
+
+// Remembers only THAT a state was used — no code, no token, no redirect target.
+async function markStateConsumed(kv: KVNamespace, state: string | undefined): Promise<void> {
+  if (!state) return;
+  await kv.put(`oauth_done:${state}`, '1', { expirationTtl: CONSUMED_STATE_TTL });
 }
 
 // Get token from session or Authorization header (middleware helper)
