@@ -282,7 +282,9 @@ export function redirectUriRegistered(requested: string, registered: string[]): 
   });
 }
 
-type ClientCheck = 'ok' | 'unknown_client' | 'redirect_mismatch' | 'unavailable';
+type ClientCheck =
+  | { status: 'ok'; clientName?: string }
+  | { status: 'unknown_client' | 'redirect_mismatch' | 'unavailable' };
 
 /**
  * Check a client's redirect_uri against its registration, which lives in Rails.
@@ -306,23 +308,124 @@ async function checkClientRedirect(env: Env, clientId: string, redirectUri: stri
     });
   } catch (error) {
     logger.error('Client lookup failed', error);
-    return 'unavailable';
+    return { status: 'unavailable' };
   }
 
   if (response.status === 404) {
     const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-    if (body.error === 'invalid_client') return 'unknown_client';
+    if (body.error === 'invalid_client') return { status: 'unknown_client' };
+    // ⚠️ Release check: after a production deploy this line must NOT appear in the Worker log.
+    // If it does, the API does not have the lookup route yet and redirect_uri is unchecked.
     logger.warn('Client lookup endpoint missing on API — redirect_uri NOT validated', { clientId });
-    return 'ok';
+    return { status: 'ok' };
   }
   if (!response.ok) {
     logger.warn('Client lookup returned an error', { status: response.status });
-    return 'unavailable';
+    return { status: 'unavailable' };
   }
 
-  const data = (await response.json().catch(() => ({}))) as { redirect_uris?: unknown };
+  const data = (await response.json().catch(() => ({}))) as { redirect_uris?: unknown; client_name?: unknown };
   const registered = Array.isArray(data.redirect_uris) ? data.redirect_uris.filter((u) => typeof u === 'string') : [];
-  return redirectUriRegistered(redirectUri, registered as string[]) ? 'ok' : 'redirect_mismatch';
+  if (!redirectUriRegistered(redirectUri, registered as string[])) return { status: 'redirect_mismatch' };
+  return { status: 'ok', clientName: typeof data.client_name === 'string' ? data.client_name : undefined };
+}
+
+/**
+ * Redirect hosts that go straight to the consent page. Anything else gets the
+ * "Check where this is going" page first.
+ *
+ * Checking the registration is not enough on its own: registration is open (RFC 7591), so an
+ * attacker can register a client with their own redirect_uri and a reassuring name. The person
+ * has to be able to see where they will actually end up — and only this Worker knows that;
+ * the consent page on the API sees this Worker as the client.
+ *
+ * Add a host only from the vendor's own documentation, with the page and the date checked.
+ * A host that is merely believed to be right stays off: the cost is one extra page.
+ */
+export const KNOWN_REDIRECT_HOSTS: ReadonlySet<string> = new Set([
+  // Claude (web, Desktop, mobile, Cowork): https://claude.com/docs/connectors/building/authentication — 2026-10-06
+  'claude.ai',
+  // ChatGPT connectors: https://developers.openai.com/apps-sdk/build/auth — 2026-10-06
+  'chatgpt.com',
+  // Gemini Enterprise custom MCP server:
+  // https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server — 2026-10-06
+  'vertexaisearch.cloud.google.com',
+  // Loopback (Claude Code, Gemini CLI): the app is on the person's own machine.
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+  // NOT listed, on purpose (no first-party source found as of 2026-10-06):
+  //   claude.com (mentioned as a possible future callback host, not confirmed in the doc above)
+  //   oauth-redirect.googleusercontent.com (Gemini app custom apps; only a third-party source)
+]);
+
+const CLIENT_NAME_MAX = 60;
+
+export function needsDestinationCheck(redirectUri: string): boolean {
+  try {
+    return !KNOWN_REDIRECT_HOSTS.has(new URL(redirectUri).hostname);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * "Check where this is going" — shown before the consent page when the destination is not a
+ * host we recognise.
+ *
+ * The client name is whatever the registrant typed. It is escaped, cut to a fixed length and
+ * kept inside quotation marks in running text, so a name like `Slima — verified` still reads as
+ * something the app calls itself. The host is the full hostname from the URL parser (an IDN
+ * shows as its xn-- form), on a line of its own. Neither link is a form, and Cancel stays here:
+ * it never navigates to the redirect_uri.
+ */
+function destinationCheckPage(options: { clientName: string; host: string; continueUrl: string; cancelUrl: string }): Response {
+  const name = escapeHtml(options.clientName.replace(/\s+/g, ' ').trim().slice(0, CLIENT_NAME_MAX) || 'Unnamed app');
+  const host = escapeHtml(options.host);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Check where this is going - Slima</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#FBFBFA;color:#111;display:grid;place-items:center;min-height:100vh;margin:0;padding:1rem}
+    main{max-width:24rem;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12);padding:2rem}
+    h1{font-size:1.125rem;margin:0 0 1rem}
+    p{font-size:.875rem;line-height:1.5;color:#374151;margin:0 0 1rem}
+    .host{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;font-size:.95rem;color:#111;background:#F3F4F6;border-radius:8px;padding:.75rem;margin:0 0 1rem;overflow-wrap:anywhere}
+    .actions{display:flex;gap:.75rem;margin-top:1.5rem}
+    .actions a{flex:1;text-align:center;padding:.625rem 1rem;border-radius:8px;font-size:.875rem;font-weight:500;text-decoration:none}
+    .cancel{color:#374151;border:1px solid #D1D5DB}
+    .continue{color:#fff;background:#111827}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Check where this is going</h1>
+    <p>An app called &ldquo;<span id="client-name">${name}</span>&rdquo; wants to connect to your Slima account. After you approve, you&rsquo;ll be sent to</p>
+    <p class="host" id="destination-host">${host}</p>
+    <p>Only continue if you started this yourself and you recognise that address.</p>
+    <div class="actions">
+      <a class="cancel" id="cancel" href="${escapeHtml(options.cancelUrl)}">Cancel</a>
+      <a class="continue" id="continue" href="${escapeHtml(options.continueUrl)}" rel="noreferrer">Continue</a>
+    </div>
+  </main>
+</body>
+</html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy':
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    },
+  });
 }
 
 /**
@@ -692,15 +795,15 @@ export function createOAuthRoutes(app: OAuthApp) {
     // Nothing below may redirect to `redirectUri` until this passes — an error "returned to the
     // client" on an unverified redirect_uri is the same open redirect by another name.
     const check = await checkClientRedirect(c.env, clientId, redirectUri);
-    if (check === 'unknown_client') {
+    if (check.status === 'unknown_client') {
       logger.warn('Authorization refused: unknown client', { clientId });
       return oauthErrorResponse('invalid_client', 'Unknown client_id. Register the client first (POST /register).');
     }
-    if (check === 'redirect_mismatch') {
+    if (check.status === 'redirect_mismatch') {
       logger.warn('Authorization refused: redirect_uri not registered', { clientId, redirectUri });
       return oauthErrorResponse('invalid_request', 'redirect_uri does not match any URI registered for this client');
     }
-    if (check === 'unavailable') {
+    if (check.status === 'unavailable') {
       return oauthErrorResponse('temporarily_unavailable', 'Could not verify the client. Please try again.', 503);
     }
 
@@ -744,7 +847,31 @@ export function createOAuthRoutes(app: OAuthApp) {
       railsAuthUrl.searchParams.set('prompt', prompt);
     }
 
+    if (needsDestinationCheck(redirectUri)) {
+      logger.info('Destination check shown', { clientId, host: new URL(redirectUri).hostname });
+      return destinationCheckPage({
+        clientName: (check.status === 'ok' && check.clientName) || '',
+        host: new URL(redirectUri).hostname,
+        continueUrl: railsAuthUrl.toString(),
+        cancelUrl: `${baseUrl}/authorize/cancel?state=${encodeURIComponent(internalState)}`,
+      });
+    }
+
     return c.redirect(railsAuthUrl.toString());
+  });
+
+  // Cancel on the destination check: forget the pending request and stay on our own page.
+  // Deliberately does NOT send an `access_denied` to the redirect_uri — the whole point of the
+  // check is that the person did not trust that address.
+  app.get('/authorize/cancel', async (c) => {
+    const state = c.req.query('state');
+    if (state) await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+    return c.html(pageTemplate({
+      title: 'Cancelled',
+      heading: 'Cancelled',
+      message: 'Nothing was connected to your Slima account.',
+      isSuccess: false,
+    }));
   });
 
   /**

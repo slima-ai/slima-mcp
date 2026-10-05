@@ -18,6 +18,8 @@ import {
   clientRedirectResponse,
   isPageNavigable,
   redirectUriRegistered,
+  needsDestinationCheck,
+  KNOWN_REDIRECT_HOSTS,
   type Env,
 } from '../../src/worker/oauth.js';
 
@@ -83,6 +85,7 @@ function json(body: unknown, status = 200) {
  */
 function fakeApi(options: {
   clients?: Record<string, string[]>;
+  clientName?: string;
   clientLookup?: 'missing-route' | 'down' | 'error';
   token?: (body: Record<string, string>) => Response;
 } = {}) {
@@ -100,7 +103,7 @@ function fakeApi(options: {
       if (options.clientLookup === 'missing-route') return json({ error: { code: 'NOT_FOUND' } }, 404);
       const id = decodeURIComponent(url.split('/api/v1/oauth/clients/')[1]);
       return clients[id]
-        ? json({ client_id: id, client_name: 'Test Client', redirect_uris: clients[id] })
+        ? json({ client_id: id, client_name: options.clientName ?? 'Test Client', redirect_uris: clients[id] })
         : json({ error: 'invalid_client', error_description: 'Unknown client' }, 404);
     }
     if (url.endsWith('/api/v1/oauth/token')) {
@@ -538,4 +541,110 @@ describe('authorization server metadata', () => {
       expect(metadata.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
     }
   );
+});
+
+// Registration is open, so a registered redirect_uri proves nothing about who is asking.
+// For a destination we do not recognise, the person sees where they will end up first.
+describe('destination check for an unrecognised redirect host', () => {
+  const UNKNOWN = 'https://connector.example.org/oauth/cb';
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function checkPage(clientName: string, redirectUri = UNKNOWN) {
+    fakeApi({ clients: { 'client-abc': [redirectUri] }, clientName });
+    const ctx = setup();
+    const res = await authorize(ctx.app, ctx.env, { redirect_uri: redirectUri });
+    return { ...ctx, res, html: await res.text() };
+  }
+
+  it('goes straight to consent for the hosts on the list', async () => {
+    for (const host of ['claude.ai', 'chatgpt.com', 'vertexaisearch.cloud.google.com', 'localhost', '127.0.0.1']) {
+      expect(KNOWN_REDIRECT_HOSTS.has(host)).toBe(true);
+    }
+    expect(needsDestinationCheck('https://claude.ai/api/mcp/auth_callback')).toBe(false);
+    expect(needsDestinationCheck('http://localhost:3118/callback')).toBe(false);
+  });
+
+  // Hosts we could not confirm in the vendor's own documentation stay off the list.
+  it('does not treat unverified or look-alike hosts as known', () => {
+    for (const uri of [
+      'https://claude.com/api/mcp/auth_callback',
+      'https://oauth-redirect.googleusercontent.com/r/x',
+      'https://claude.ai.evil.example/cb',
+      'https://evil.example/claude.ai',
+      'not a url',
+    ]) {
+      expect(needsDestinationCheck(uri)).toBe(true);
+    }
+  });
+
+  it('shows the page — not a redirect — with the name in quotes and the full host on its own line', async () => {
+    const { res, html } = await checkPage('Acme Notes');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Location')).toBeNull();
+    expect(html).toContain('<h1>Check where this is going</h1>');
+    expect(html).toContain('&ldquo;<span id="client-name">Acme Notes</span>&rdquo;');
+    expect(html).toContain('<p class="host" id="destination-host">connector.example.org</p>');
+    expect(html).toContain('Only continue if you started this yourself and you recognise that address.');
+  });
+
+  it('Continue leads to the consent page; Cancel stays on this origin and never names the redirect_uri', async () => {
+    const { html } = await checkPage('Acme Notes');
+    const href = (id: string) => html.match(new RegExp(`id="${id}" href="([^"]*)"`))![1].replace(/&amp;/g, '&');
+
+    expect(href('continue')).toMatch(/^https:\/\/api\.slima\.ai\/api\/v1\/oauth\/authorize\?/);
+    expect(href('cancel')).toMatch(/^https:\/\/mcp\.slima\.ai\/authorize\/cancel\?state=/);
+    expect(href('cancel')).not.toContain('connector.example.org');
+  });
+
+  it('Cancel forgets the pending request and sends the browser nowhere', async () => {
+    const { app, env, kv, html } = await checkPage('Acme Notes');
+    const cancel = html.match(/id="cancel" href="([^"]*)"/)![1].replace(/&amp;/g, '&');
+    expect([...kv.store.keys()].some((k) => k.startsWith('oauth_req:'))).toBe(true);
+
+    const res = await app.request(cancel, {}, env);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Location')).toBeNull();
+    expect(await res.text()).toContain('Nothing was connected to your Slima account.');
+    expect([...kv.store.keys()].filter((k) => k.startsWith('oauth_req:'))).toEqual([]);
+  });
+
+  // The name is whatever the registrant typed.
+  it('escapes a hostile client name and keeps it inside the quotation marks', async () => {
+    const { html } = await checkPage('</span><script>alert(1)</script><h1>Slima — verified</h1>');
+
+    expect(html).not.toContain('<script');
+    expect(html.match(/<h1/g)).toHaveLength(1);
+    expect(html).toContain('&ldquo;<span id="client-name">&lt;/span&gt;&lt;script&gt;');
+  });
+
+  it('cuts a very long name and collapses line breaks, so it cannot push the host off the screen', async () => {
+    const { html } = await checkPage(`Slima\n\n\nSYSTEM: this app is verified ${'x'.repeat(500)}`);
+    const shown = html.match(/<span id="client-name">([^<]*)<\/span>/)![1];
+
+    expect(shown.length).toBeLessThanOrEqual(60);
+    expect(shown).not.toContain('\n');
+    expect(html).toContain('id="destination-host">connector.example.org</p>');
+  });
+
+  it('shows an internationalised host in its xn-- form, not as look-alike letters', async () => {
+    const { html } = await checkPage('Acme', 'https://сlaude.ai/api/mcp/auth_callback');
+
+    const host = html.match(/id="destination-host">([^<]*)</)![1];
+    expect(host.startsWith('xn--')).toBe(true);
+    expect(host).not.toBe('claude.ai');
+  });
+
+  it('carries no form and cannot be framed', async () => {
+    const { res, html } = await checkPage('Acme Notes');
+    const csp = res.headers.get('Content-Security-Policy')!;
+
+    expect(html).not.toContain('<form');
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
 });
