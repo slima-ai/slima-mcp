@@ -106,7 +106,8 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
 
         const formatted = books
           .map((book) => {
-            const words = book.totalWordCount?.toLocaleString() || '0';
+            // The book itself — what counts toward the author's word count.
+            const words = book.manuscriptWordCount?.toLocaleString() || '0';
             return `- **${book.title}** (${book.token}) — ${studioLabel(book)}\n  Author: ${book.authorName || 'N/A'} | Words: ${words}`;
           })
           .join('\n\n');
@@ -162,7 +163,7 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
 - **Author**: ${book.authorName || 'N/A'}
 - **Description**: ${book.description || 'N/A'}
 - **Language**: ${book.language || 'N/A'}
-- **Total Words**: ${book.totalWordCount?.toLocaleString() || '0'}
+- **Total Words**: ${book.wordCount?.toLocaleString() || '0'}
 - **Manuscript Words**: ${book.manuscriptWordCount?.toLocaleString() || '0'}
 - **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'}
 - **Created**: ${book.createdAt}
@@ -258,7 +259,7 @@ figures are account-level and are not exposed here.`,
 
         const text = `# Writing Stats: ${book.title}
 
-- **Total Words**: ${book.totalWordCount?.toLocaleString() || '0'}
+- **Total Words**: ${book.wordCount?.toLocaleString() || '0'}
 - **Manuscript Words**: ${book.manuscriptWordCount?.toLocaleString() || '0'} (the book itself — what counts toward the author's word count)
 - **Reference Words**: ${book.referenceWordCount?.toLocaleString() || '0'} (notes, worldbuilding — never counted)
 - **Language**: ${book.language || 'N/A'}

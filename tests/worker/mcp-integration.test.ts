@@ -12,12 +12,12 @@ import { handleMcpRequest, McpHandlerOptions } from '../../src/worker/mcp-handle
 vi.mock('../../src/core/api/client.js', () => ({
   SlimaApiClient: vi.fn().mockImplementation(() => ({
     listBooks: vi.fn().mockResolvedValue({ books: [
-      { token: 'bk_test1', title: 'Test Book 1', totalWordCount: 1000 },
+      { token: 'bk_test1', title: 'Test Book 1', wordCount: 1000, manuscriptWordCount: 1000 },
     ], meta: {} }),
     getBook: vi.fn().mockResolvedValue({
       token: 'bk_test1',
       title: 'Test Book 1',
-      totalWordCount: 1000,
+      wordCount: 1000,
     }),
     createBook: vi.fn().mockResolvedValue({
       token: 'bk_new',

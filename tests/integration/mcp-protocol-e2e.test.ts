@@ -45,7 +45,8 @@ type FakeBook = {
   title: string;
   bookType: 'book' | 'script';
   authorName?: string;
-  totalWordCount?: number;
+  wordCount?: number;
+  manuscriptWordCount?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -262,7 +263,7 @@ describe('MCP Protocol E2E — Script Studio Studio awareness', () => {
           title: 'My Screenplay',
           bookType: 'script',
           authorName: 'Jane',
-          totalWordCount: 1000,
+          wordCount: 1000, manuscriptWordCount: 1000,
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
         },
@@ -271,7 +272,7 @@ describe('MCP Protocol E2E — Script Studio Studio awareness', () => {
           title: 'My Novel',
           bookType: 'book',
           authorName: 'John',
-          totalWordCount: 50000,
+          wordCount: 50000, manuscriptWordCount: 50000,
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
         },

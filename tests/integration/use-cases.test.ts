@@ -102,7 +102,7 @@ describe('Use Case: New Author Starting a Book', () => {
         token: 'bk_newbook123',
         title: '我的第一本小說',
         authorName: '作者名',
-        totalWordCount: 150,
+        wordCount: 150, manuscriptWordCount: 150,
       },
     ], meta: {} });
 
@@ -194,7 +194,7 @@ describe('Use Case: Daily Writing Workflow', () => {
     (mockClient.getBook as ReturnType<typeof vi.fn>).mockResolvedValue({
       token: 'bk_test',
       title: '測試書籍',
-      totalWordCount: 2500,
+      wordCount: 2500,
       manuscriptWordCount: 2000,
       language: 'zh-TW',
     });
