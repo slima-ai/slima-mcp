@@ -48,13 +48,13 @@ describe('Book Tools Handlers', () => {
           token: 'bk_test1',
           title: 'My Novel',
           authorName: 'John Doe',
-          totalWordCount: 50000,
+          wordCount: 50000, manuscriptWordCount: 50000,
         },
         {
           token: 'bk_test2',
           title: 'Another Book',
           authorName: 'Jane Doe',
-          totalWordCount: 30000,
+          wordCount: 30000, manuscriptWordCount: 30000,
         },
       ], meta: {} });
 
@@ -85,7 +85,7 @@ describe('Book Tools Handlers', () => {
           {
             token: 'bk_test1',
             title: 'Untitled',
-            totalWordCount: 0,
+            wordCount: 0, manuscriptWordCount: 0,
           },
         ],
         meta: {},
@@ -118,7 +118,7 @@ describe('Book Tools Handlers', () => {
         authorName: 'John Doe',
         description: 'A great story',
         language: 'zh-TW',
-        totalWordCount: 50000,
+        wordCount: 50000,
         manuscriptWordCount: 45000,
         referenceWordCount: 5000,
         createdAt: '2024-01-01T00:00:00Z',
@@ -223,7 +223,7 @@ describe('Book Tools Handlers', () => {
     const book = {
       token: 'bk_test',
       title: 'My Novel',
-      totalWordCount: 50000,
+      wordCount: 50000,
       manuscriptWordCount: 45000,
       referenceWordCount: 5000,
       language: 'zh-TW',

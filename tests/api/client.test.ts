@@ -73,7 +73,7 @@ describe('SlimaApiClient', () => {
         token: 'bk_test',
         title: 'Test Book',
         authorName: 'Test Author',
-        totalWordCount: 10000,
+        wordCount: 10000,
       };
 
       global.fetch = vi.fn().mockResolvedValue({
@@ -85,7 +85,7 @@ describe('SlimaApiClient', () => {
 
       expect(book.title).toBe('Test Book');
       expect(book.authorName).toBe('Test Author');
-      expect(book.totalWordCount).toBe(10000);
+      expect(book.wordCount).toBe(10000);
     });
 
     it('should throw NotFoundError on 404', async () => {

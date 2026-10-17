@@ -25,7 +25,7 @@ const page = (count: number, meta: Record<string, number>) => ({
     token: `bk_${i}`,
     title: `Book ${i}`,
     bookType: 'book' as const,
-    totalWordCount: 1000,
+    wordCount: 1000, manuscriptWordCount: 1000,
     createdAt: '',
     updatedAt: '',
   })),

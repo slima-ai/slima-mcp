@@ -158,6 +158,299 @@ function pageTemplate(options: {
 </html>`;
 }
 
+/**
+ * Where an AI-client flow may be sent by the interstitial page below.
+ *
+ * A 302 to `javascript:…` is inert; a page that navigates there by script, meta refresh
+ * or an <a href> is script execution on mcp.slima.ai. So the page is only ever used for
+ * https and loopback http — everything else keeps the plain 302 it always had.
+ */
+export function isPageNavigable(target: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(target);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  if (url.protocol === 'http:') {
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  }
+  return false;
+}
+
+// JSON.stringify alone leaves `</script>` and U+2028/2029 able to end the script element.
+function jsStringLiteral(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Send the browser back to the AI client from /callback.
+ *
+ * NOT a 302, on purpose. The Rails consent page is a <form method="post">, and Chromium
+ * applies that page's CSP `form-action` to EVERY hop of the redirect chain that follows the
+ * submission. Rails can only allow the hop it knows about (this Worker); the hop from here to
+ * the client (claude.ai, a loopback port, …) is not on its list, so the browser dropped it —
+ * after this handler had already consumed the state and redeemed the Rails code. The user was
+ * left on the consent page, pressed Authorize again, and got "authorization session has expired".
+ * Prod, 2026-09-14 → 10-05: 59 tokens minted, 0 ever used.
+ *
+ * A 200 ends the form-submission navigation; the page then starts a new one of its own, which
+ * no other page's CSP governs.
+ *
+ * `target` is always built from the redirect_uri stored for THIS state at /authorize.
+ */
+export function clientRedirectResponse(target: string): Response {
+  if (!isPageNavigable(target)) {
+    return new Response(null, { status: 302, headers: { Location: target, 'Cache-Control': 'no-store' } });
+  }
+
+  const nonce = base64UrlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  const safeHref = escapeHtml(target);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Returning to your app - Slima</title>
+  <noscript><meta http-equiv="refresh" content="0;url=${safeHref}"></noscript>
+  <style>body{font-family:system-ui,sans-serif;background:#FBFBFA;color:#111;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:22rem;padding:2rem;text-align:center}a{color:#111}</style>
+</head>
+<body>
+  <main>
+    <p>Returning to your app…</p>
+    <p><a id="continue" href="${safeHref}" rel="noreferrer">Continue</a> if nothing happens.</p>
+  </main>
+  <script nonce="${nonce}">window.location.replace(${jsStringLiteral(target)});</script>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // The URL carries an authorization code: never cache it, never leak it as a referrer.
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      // No form on this page, so no `form-action` to trip over; the nonce is what lets the
+      // one inline script run. Navigation itself is not something CSP restricts.
+      'Content-Security-Policy':
+        `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'`,
+    },
+  });
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Does `requested` match a redirect_uri the client registered?
+ *
+ * Exact string match, with the one exception RFC 8252 §7.3 requires: a loopback redirect
+ * matches on any port, because native clients (Claude Code, Gemini CLI) bind an ephemeral
+ * port per session. Scheme, host, path and query still have to match.
+ */
+export function redirectUriRegistered(requested: string, registered: string[]): boolean {
+  if (registered.includes(requested)) return true;
+
+  let want: URL;
+  try {
+    want = new URL(requested);
+  } catch {
+    return false;
+  }
+  if (want.protocol !== 'http:' || !LOOPBACK_HOSTS.has(want.hostname)) return false;
+
+  return registered.some((candidate) => {
+    try {
+      const have = new URL(candidate);
+      return (
+        have.protocol === 'http:' &&
+        have.hostname === want.hostname &&
+        have.pathname === want.pathname &&
+        have.search === want.search
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+type ClientCheck =
+  | { status: 'ok'; clientName?: string }
+  | { status: 'unknown_client' | 'redirect_mismatch' | 'unavailable' };
+
+/**
+ * Check a client's redirect_uri against its registration, which lives in Rails.
+ *
+ * This Worker is the authorization server AI clients talk to, and until 2026-10 /authorize
+ * accepted ANY redirect_uri: a crafted link showed the genuine Slima consent page and then
+ * delivered the code to whatever URL the link named.
+ *
+ * - Rails says the client is unknown, or the URI is not one it registered → refuse.
+ * - Rails is down or slow → 'unavailable' (refuse; the user can retry — a check that passes
+ *   whenever its backend is unreachable is not a check).
+ * - Rails answers 404 WITHOUT `error: invalid_client` → the route does not exist there yet
+ *   (this Worker deployed ahead of Rails). Only then is the check skipped, with a warning,
+ *   so the two deploys do not have to be simultaneous.
+ */
+async function checkClientRedirect(env: Env, clientId: string, redirectUri: string): Promise<ClientCheck> {
+  let response: Response;
+  try {
+    response = await fetch(`${env.SLIMA_API_URL}/api/v1/oauth/clients/${encodeURIComponent(clientId)}`, {
+      headers: { Accept: 'application/json' },
+    });
+  } catch (error) {
+    logger.error('Client lookup failed', error);
+    return { status: 'unavailable' };
+  }
+
+  if (response.status === 404) {
+    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+    if (body.error === 'invalid_client') return { status: 'unknown_client' };
+    // ⚠️ Release check: after a production deploy this line must NOT appear in the Worker log.
+    // If it does, the API does not have the lookup route yet and redirect_uri is unchecked.
+    logger.warn('Client lookup endpoint missing on API — redirect_uri NOT validated', { clientId });
+    return { status: 'ok' };
+  }
+  if (!response.ok) {
+    logger.warn('Client lookup returned an error', { status: response.status });
+    return { status: 'unavailable' };
+  }
+
+  const data = (await response.json().catch(() => ({}))) as { redirect_uris?: unknown; client_name?: unknown };
+  const registered = Array.isArray(data.redirect_uris) ? data.redirect_uris.filter((u) => typeof u === 'string') : [];
+  if (!redirectUriRegistered(redirectUri, registered as string[])) return { status: 'redirect_mismatch' };
+  return { status: 'ok', clientName: typeof data.client_name === 'string' ? data.client_name : undefined };
+}
+
+/**
+ * Redirect hosts that go straight to the consent page. Anything else gets the
+ * "Check where this is going" page first.
+ *
+ * Checking the registration is not enough on its own: registration is open (RFC 7591), so an
+ * attacker can register a client with their own redirect_uri and a reassuring name. The person
+ * has to be able to see where they will actually end up — and only this Worker knows that;
+ * the consent page on the API sees this Worker as the client.
+ *
+ * Add a host only from the vendor's own documentation, with the page and the date checked.
+ * A host that is merely believed to be right stays off: the cost is one extra page.
+ */
+export const KNOWN_REDIRECT_HOSTS: ReadonlySet<string> = new Set([
+  // Claude (web, Desktop, mobile, Cowork): https://claude.com/docs/connectors/building/authentication — 2026-10-06
+  'claude.ai',
+  // ChatGPT connectors: https://developers.openai.com/apps-sdk/build/auth — 2026-10-06
+  'chatgpt.com',
+  // Gemini Enterprise custom MCP server:
+  // https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server — 2026-10-06
+  'vertexaisearch.cloud.google.com',
+  // Loopback (Claude Code, Gemini CLI): the app is on the person's own machine.
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+  // NOT listed, on purpose (no first-party source found as of 2026-10-06):
+  //   claude.com (mentioned as a possible future callback host, not confirmed in the doc above)
+  //   oauth-redirect.googleusercontent.com (Gemini app custom apps; only a third-party source)
+]);
+
+const CLIENT_NAME_MAX = 60;
+
+export function needsDestinationCheck(redirectUri: string): boolean {
+  try {
+    return !KNOWN_REDIRECT_HOSTS.has(new URL(redirectUri).hostname);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * "Check where this is going" — shown before the consent page when the destination is not a
+ * host we recognise.
+ *
+ * The client name is whatever the registrant typed. It is escaped, cut to a fixed length and
+ * kept inside quotation marks in running text, so a name like `Slima — verified` still reads as
+ * something the app calls itself. The host is the full hostname from the URL parser (an IDN
+ * shows as its xn-- form), on a line of its own. Neither link is a form, and Cancel stays here:
+ * it never navigates to the redirect_uri.
+ */
+function destinationCheckPage(options: { clientName: string; host: string; continueUrl: string; cancelUrl: string }): Response {
+  const name = escapeHtml(options.clientName.replace(/\s+/g, ' ').trim().slice(0, CLIENT_NAME_MAX) || 'Unnamed app');
+  const host = escapeHtml(options.host);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Check where this is going - Slima</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#FBFBFA;color:#111;display:grid;place-items:center;min-height:100vh;margin:0;padding:1rem}
+    main{max-width:24rem;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12);padding:2rem}
+    h1{font-size:1.125rem;margin:0 0 1rem}
+    p{font-size:.875rem;line-height:1.5;color:#374151;margin:0 0 1rem}
+    .host{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;font-size:.95rem;color:#111;background:#F3F4F6;border-radius:8px;padding:.75rem;margin:0 0 1rem;overflow-wrap:anywhere}
+    .actions{display:flex;gap:.75rem;margin-top:1.5rem}
+    .actions a{flex:1;text-align:center;padding:.625rem 1rem;border-radius:8px;font-size:.875rem;font-weight:500;text-decoration:none}
+    .cancel{color:#374151;border:1px solid #D1D5DB}
+    .continue{color:#fff;background:#111827}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Check where this is going</h1>
+    <p>An app called &ldquo;<span id="client-name">${name}</span>&rdquo; wants to connect to your Slima account. After you approve, you&rsquo;ll be sent to</p>
+    <p class="host" id="destination-host">${host}</p>
+    <p>Only continue if you started this yourself and you recognise that address.</p>
+    <div class="actions">
+      <a class="cancel" id="cancel" href="${escapeHtml(options.cancelUrl)}">Cancel</a>
+      <a class="continue" id="continue" href="${escapeHtml(options.continueUrl)}" rel="noreferrer">Continue</a>
+    </div>
+  </main>
+</body>
+</html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy':
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    },
+  });
+}
+
+/**
+ * The URL that returns an AI-client flow to the client: its registered redirect_uri plus
+ * the response parameters, `state`, and `iss` (RFC 9207 — must equal the `issuer` in our
+ * metadata, which is this Worker's origin).
+ */
+function clientCallbackUrl(
+  redirectUri: string,
+  issuer: string,
+  originalState: string,
+  params: Record<string, string | undefined>
+): string {
+  const url = new URL(redirectUri);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) url.searchParams.set(key, value);
+  }
+  url.searchParams.set('state', originalState);
+  url.searchParams.set('iss', issuer);
+  return url.toString();
+}
+
+// How long /callback remembers that a state was already used (same as the state's own TTL).
+const CONSUMED_STATE_TTL = 600;
+
 export function createOAuthRoutes(app: OAuthApp) {
   // CORS configuration for AI platforms
   app.use('/auth/*', cors({
@@ -230,14 +523,14 @@ export function createOAuthRoutes(app: OAuthApp) {
         // AI client flow - redirect back with error
         const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
         await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+        await markStateConsumed(c.env.OAUTH_KV, state);
 
-        const callbackUrl = new URL(oauthReq.redirectUri);
-        callbackUrl.searchParams.set('error', error);
-        if (errorDescription) {
-          callbackUrl.searchParams.set('error_description', errorDescription);
-        }
-        callbackUrl.searchParams.set('state', oauthReq.originalState);
-        return c.redirect(callbackUrl.toString());
+        return clientRedirectResponse(
+          clientCallbackUrl(oauthReq.redirectUri, new URL(c.req.url).origin, oauthReq.originalState, {
+            error,
+            error_description: errorDescription,
+          })
+        );
       }
 
       // Browser flow - show error page
@@ -261,6 +554,7 @@ export function createOAuthRoutes(app: OAuthApp) {
       // ================================================================
       const oauthReq: OAuthRequestContext = JSON.parse(oauthReqData);
       await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+      await markStateConsumed(c.env.OAUTH_KV, state);
 
       logger.info('AI client callback', {
         clientId: oauthReq.clientId,
@@ -292,11 +586,12 @@ export function createOAuthRoutes(app: OAuthApp) {
           clientId: oauthReq.clientId,
         });
 
-        const callbackUrl = new URL(oauthReq.redirectUri);
-        callbackUrl.searchParams.set('error', errorData.error || 'server_error');
-        callbackUrl.searchParams.set('error_description', errorData.error_description || 'Token exchange failed');
-        callbackUrl.searchParams.set('state', oauthReq.originalState);
-        return c.redirect(callbackUrl.toString());
+        return clientRedirectResponse(
+          clientCallbackUrl(oauthReq.redirectUri, baseUrl, oauthReq.originalState, {
+            error: errorData.error || 'server_error',
+            error_description: errorData.error_description || 'Token exchange failed',
+          })
+        );
       }
 
       const tokenData = await tokenResponse.json() as {
@@ -325,14 +620,25 @@ export function createOAuthRoutes(app: OAuthApp) {
         { expirationTtl: 600 } // 10 minutes
       );
 
-      logger.info('Authorization code issued', { code: workerCode.slice(0, 8) });
+      logger.info('Authorization code issued');
 
-      // Redirect back to client with authorization code
-      const callbackUrl = new URL(oauthReq.redirectUri);
-      callbackUrl.searchParams.set('code', workerCode);
-      callbackUrl.searchParams.set('state', oauthReq.originalState);
+      return clientRedirectResponse(
+        clientCallbackUrl(oauthReq.redirectUri, baseUrl, oauthReq.originalState, { code: workerCode })
+      );
+    }
 
-      return c.redirect(callbackUrl.toString());
+    // A second arrival on a state this handler already finished: the back button, a reload,
+    // or a second press of Authorize on a consent page that was left open. It used to fall
+    // through to "authorization session has expired", which sent people looking for a timeout
+    // that was not there. Nothing is replayed — the code issued the first time stays single-use.
+    if (state && (await c.env.OAUTH_KV.get(`oauth_done:${state}`))) {
+      logger.info('Callback on an already-used state', { state: state.slice(0, 8) });
+      return c.html(pageTemplate({
+        title: 'Already Used',
+        heading: 'This authorization was already used',
+        message: 'Go back to Claude (or your AI app) and click Connect again to start a new one.',
+        isSuccess: false,
+      }), 400);
     }
 
     // ================================================================
@@ -486,6 +792,21 @@ export function createOAuthRoutes(app: OAuthApp) {
       return oauthErrorResponse('invalid_request', 'Only S256 code_challenge_method is supported');
     }
 
+    // Nothing below may redirect to `redirectUri` until this passes — an error "returned to the
+    // client" on an unverified redirect_uri is the same open redirect by another name.
+    const check = await checkClientRedirect(c.env, clientId, redirectUri);
+    if (check.status === 'unknown_client') {
+      logger.warn('Authorization refused: unknown client', { clientId });
+      return oauthErrorResponse('invalid_client', 'Unknown client_id. Register the client first (POST /register).');
+    }
+    if (check.status === 'redirect_mismatch') {
+      logger.warn('Authorization refused: redirect_uri not registered', { clientId, redirectUri });
+      return oauthErrorResponse('invalid_request', 'redirect_uri does not match any URI registered for this client');
+    }
+    if (check.status === 'unavailable') {
+      return oauthErrorResponse('temporarily_unavailable', 'Could not verify the client. Please try again.', 503);
+    }
+
     // Generate internal state and PKCE for Rails OAuth
     const internalState = crypto.randomUUID();
     const internalVerifier = generateCodeVerifier();
@@ -526,7 +847,31 @@ export function createOAuthRoutes(app: OAuthApp) {
       railsAuthUrl.searchParams.set('prompt', prompt);
     }
 
+    if (needsDestinationCheck(redirectUri)) {
+      logger.info('Destination check shown', { clientId, host: new URL(redirectUri).hostname });
+      return destinationCheckPage({
+        clientName: (check.status === 'ok' && check.clientName) || '',
+        host: new URL(redirectUri).hostname,
+        continueUrl: railsAuthUrl.toString(),
+        cancelUrl: `${baseUrl}/authorize/cancel?state=${encodeURIComponent(internalState)}`,
+      });
+    }
+
     return c.redirect(railsAuthUrl.toString());
+  });
+
+  // Cancel on the destination check: forget the pending request and stay on our own page.
+  // Deliberately does NOT send an `access_denied` to the redirect_uri — the whole point of the
+  // check is that the person did not trust that address.
+  app.get('/authorize/cancel', async (c) => {
+    const state = c.req.query('state');
+    if (state) await c.env.OAUTH_KV.delete(`oauth_req:${state}`);
+    return c.html(pageTemplate({
+      title: 'Cancelled',
+      heading: 'Cancelled',
+      message: 'Nothing was connected to your Slima account.',
+      isSuccess: false,
+    }));
   });
 
   /**
@@ -566,7 +911,6 @@ export function createOAuthRoutes(app: OAuthApp) {
       grantType,
       clientId,
       hasCode: !!code,
-      codePrefix: code?.slice(0, 8),
       hasVerifier: !!codeVerifier,
       hasRefreshToken: !!refreshToken,
       redirectUri,
@@ -578,29 +922,75 @@ export function createOAuthRoutes(app: OAuthApp) {
       if (!refreshToken) {
         return oauthErrorResponse('invalid_request', 'Missing refresh_token parameter');
       }
-      // Look up the refresh token in KV
+      // Legacy: refresh tokens this Worker minted itself before 2026-10 live in KV and only
+      // ever pointed at one Rails token. They keep working exactly as before — re-issuing the
+      // same access token — so nobody connected today is signed out by this change.
       const storedData = await c.env.OAUTH_KV.get(`refresh:${refreshToken}`);
-      if (!storedData) {
-        logger.warn('Invalid or expired refresh token');
+      if (storedData) {
+        const { accessToken, expiresIn } = JSON.parse(storedData) as { accessToken: string; expiresIn: number };
+        const newRefreshToken = crypto.randomUUID();
+        await c.env.OAUTH_KV.put(
+          `refresh:${newRefreshToken}`,
+          JSON.stringify({ accessToken, expiresIn }),
+          { expirationTtl: expiresIn || 2592000 }
+        );
+        await c.env.OAUTH_KV.delete(`refresh:${refreshToken}`);
+        logger.info('Token refreshed (legacy KV refresh token)');
+        return c.json({
+          access_token: accessToken,
+          token_type: 'bearer',
+          expires_in: expiresIn || 2592000,
+          scope: 'read write',
+          refresh_token: newRefreshToken,
+        });
+      }
+
+      // Everything else is a real refresh token issued by Rails: Rails rotates it, mints a new
+      // access token, and decides about replay. This Worker only carries the request.
+      let railsResponse: Response;
+      try {
+        railsResponse = await fetch(`${c.env.SLIMA_API_URL}/api/v1/oauth/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            client_id: c.env.OAUTH_CLIENT_ID,
+          }),
+        });
+      } catch (error) {
+        logger.error('Refresh request to API failed', error);
+        return oauthErrorResponse('temporarily_unavailable', 'Could not reach the token service', 503);
+      }
+
+      if (railsResponse.status >= 500) {
+        // Not invalid_grant: that would tell the client to throw the connection away.
+        logger.warn('API error during refresh', { status: railsResponse.status });
+        return oauthErrorResponse('temporarily_unavailable', 'Token service error', 503);
+      }
+      if (!railsResponse.ok) {
+        logger.warn('Refresh token rejected');
         return oauthErrorResponse('invalid_grant', 'Invalid or expired refresh token');
       }
-      const { accessToken, expiresIn } = JSON.parse(storedData) as { accessToken: string; expiresIn: number };
-      // Generate a new refresh token
-      const newRefreshToken = crypto.randomUUID();
-      await c.env.OAUTH_KV.put(
-        `refresh:${newRefreshToken}`,
-        JSON.stringify({ accessToken, expiresIn }),
-        { expirationTtl: expiresIn || 2592000 }
-      );
-      // Delete old refresh token
-      await c.env.OAUTH_KV.delete(`refresh:${refreshToken}`);
-      logger.info('Token refreshed successfully', { tokenPrefix: accessToken?.slice(0, 10) });
+
+      const refreshed = (await railsResponse.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in: number;
+      };
+      if (!refreshed.refresh_token) {
+        // An API from before real refresh tokens ignores grant_type and can only fail above;
+        // reaching here without one means something is badly off. Do not hand out half a pair.
+        logger.error('API refresh response carried no refresh_token');
+        return oauthErrorResponse('invalid_grant', 'Invalid or expired refresh token');
+      }
+      logger.info('Token refreshed');
       return c.json({
-        access_token: accessToken,
+        access_token: refreshed.access_token,
         token_type: 'bearer',
-        expires_in: expiresIn || 2592000,
+        expires_in: refreshed.expires_in,
         scope: 'read write',
-        refresh_token: newRefreshToken,
+        refresh_token: refreshed.refresh_token,
       });
     }
 
@@ -620,7 +1010,7 @@ export function createOAuthRoutes(app: OAuthApp) {
     // Get auth code data from KV
     const stored = await c.env.OAUTH_KV.get(`auth_code:${code}`);
     if (!stored) {
-      logger.warn('Invalid or expired auth code', { code: code.slice(0, 8) });
+      logger.warn('Invalid or expired auth code');
       return oauthErrorResponse('invalid_grant', 'Invalid or expired authorization code');
     }
 
@@ -648,22 +1038,23 @@ export function createOAuthRoutes(app: OAuthApp) {
       return oauthErrorResponse('invalid_grant', 'PKCE verification failed');
     }
 
-    // Generate a refresh_token (required by Claude.ai which registers with refresh_token grant)
-    const workerRefreshToken = crypto.randomUUID();
-    await c.env.OAUTH_KV.put(
-      `refresh:${workerRefreshToken}`,
-      JSON.stringify({
-        accessToken: authData.accessToken,
-        expiresIn: authData.expiresIn || 2592000,
-      }),
-      { expirationTtl: (authData.expiresIn || 2592000) * 2 } // Refresh token lives longer
-    );
+    // The refresh token comes from Rails (a real one: rotation, replay detection, revocation).
+    // Only when the API predates that — it returned none — fall back to the old Worker-minted
+    // KV token, so this Worker can deploy before or after the API without breaking sign-in.
+    let workerRefreshToken = authData.refreshToken;
+    if (!workerRefreshToken) {
+      workerRefreshToken = crypto.randomUUID();
+      await c.env.OAUTH_KV.put(
+        `refresh:${workerRefreshToken}`,
+        JSON.stringify({
+          accessToken: authData.accessToken,
+          expiresIn: authData.expiresIn || 2592000,
+        }),
+        { expirationTtl: (authData.expiresIn || 2592000) * 2 }
+      );
+    }
 
-    logger.info('Token issued successfully', {
-      tokenPrefix: authData.accessToken?.slice(0, 10),
-      expiresIn: authData.expiresIn,
-      hasRefreshToken: true,
-    });
+    logger.info('Token issued successfully', { expiresIn: authData.expiresIn, realRefresh: !!authData.refreshToken });
 
     // Return standard OAuth 2.0 token response (RFC 6749)
     // MUST include refresh_token - Claude.ai registers with grant_types: ["authorization_code", "refresh_token"]
@@ -718,6 +1109,12 @@ export function createOAuthRoutes(app: OAuthApp) {
   });
 }
 
+// Remembers only THAT a state was used — no code, no token, no redirect target.
+async function markStateConsumed(kv: KVNamespace, state: string | undefined): Promise<void> {
+  if (!state) return;
+  await kv.put(`oauth_done:${state}`, '1', { expirationTtl: CONSUMED_STATE_TTL });
+}
+
 // Get token from session or Authorization header (middleware helper)
 // Supports:
 // 1. Bearer token (Claude.ai, ChatGPT style): Authorization: Bearer <token>
@@ -737,7 +1134,7 @@ export async function getTokenFromSession(c: Context<{ Bindings: Env }>): Promis
       // OAuth access tokens: the token IS the Rails API token
       // (returned by our /token endpoint after OAuth flow)
       // Let Rails API validate it - don't filter by prefix here
-      logger.debug('Bearer token received (non-slima_ prefix)', { tokenPrefix: token.slice(0, 8) });
+      logger.debug('Bearer token received (non-slima_ prefix)');
       return token;
     }
   }

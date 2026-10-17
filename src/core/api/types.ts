@@ -22,7 +22,12 @@ export interface Book {
   authorName?: string;
   description?: string;
   language?: string;
-  totalWordCount?: number;
+  /**
+   * The whole book (manuscript + reference). Rails' BookResource calls it
+   * `wordCount`; there is no `totalWordCount` on a book — reading that name gave
+   * undefined and every book showed 0 words (iss_vufyxakbn3wjh2m4).
+   */
+  wordCount?: number;
   manuscriptWordCount?: number;
   referenceWordCount?: number;
   createdAt: string;

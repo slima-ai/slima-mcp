@@ -217,6 +217,8 @@ app.get('/.well-known/oauth-authorization-server', (c) => {
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
+    // RFC 9207: /callback returns `iss` to the client. Gemini CLI rejects a callback without it.
+    authorization_response_iss_parameter_supported: true,
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['read', 'write'],
   });
@@ -236,6 +238,8 @@ app.get('/.well-known/oauth-authorization-server/:path', (c) => {
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
+    // RFC 9207: /callback returns `iss` to the client. Gemini CLI rejects a callback without it.
+    authorization_response_iss_parameter_supported: true,
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['read', 'write'],
   });
@@ -282,6 +286,8 @@ app.get('/.well-known/openid-configuration', (c) => {
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
+    // RFC 9207: /callback returns `iss` to the client. Gemini CLI rejects a callback without it.
+    authorization_response_iss_parameter_supported: true,
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['read', 'write', 'openid'],
     subject_types_supported: ['public'],
@@ -299,6 +305,8 @@ app.get('/.well-known/openid-configuration/:path', (c) => {
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
+    // RFC 9207: /callback returns `iss` to the client. Gemini CLI rejects a callback without it.
+    authorization_response_iss_parameter_supported: true,
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['read', 'write', 'openid'],
     subject_types_supported: ['public'],
