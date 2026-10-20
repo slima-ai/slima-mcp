@@ -16,14 +16,14 @@ const READ_ONLY = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
-  openWorldHint: true,
+  openWorldHint: false,
 } as const;
 
 const WRITES = {
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: false,
-  openWorldHint: true,
+  openWorldHint: false,
 } as const;
 
 const BOOK_TOKEN = z.string().describe('Book token (bk_...)');
@@ -98,7 +98,7 @@ Costs a small embedding charge, unlike literal search. Returns §N paragraph anc
       query: z.string().describe('What you are looking for, in natural language'),
       limit: z.number().optional().describe('Max results (default 10, cap 50)'),
     },
-    { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ book_token, query, limit }) => {
       try {
         return json(await client.semanticSearch(book_token, query, limit));

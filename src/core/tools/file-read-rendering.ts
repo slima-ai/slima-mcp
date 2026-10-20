@@ -54,6 +54,8 @@ export function renderFileRead(result: McpFileReadResponse): string {
     `**Path:** ${result.file.path}`,
     `**Words:** ${result.file.wordCount}`,
     `**Type:** ${result.file.fileType || 'unknown'}`,
+    // The file's version: pass it as base_version to append_to_file so a retry cannot duplicate text.
+    ...(result.file.blobHash ? [`**Version:** ${result.file.blobHash}`] : []),
     '',
     '---',
     '',
