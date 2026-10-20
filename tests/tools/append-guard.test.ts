@@ -158,26 +158,20 @@ describe('read_file shows the version', () => {
 });
 
 describe('openWorldHint', () => {
-  it("the author's own workspace tools say they do not reach the open world; shared team and guide tools are left as they were", () => {
+  it('every tool says it does not reach the open world: all of them only read and write inside Slima', () => {
     const server = new McpServer({ name: 'test', version: '1.0.0' });
     const tools = capture(server);
     const client = {} as SlimaApiClient;
+    registerTeachingTools(server, client);
     registerBookTools(server, client);
+    registerTeamTools(server, client);
+    registerWorkspaceTools(server, client);
     registerContentTools(server, client);
     registerFileTools(server, client);
     registerStructuredTools(server, client);
-    registerWorkspaceTools(server, client);
-    expect(tools.size).toBeGreaterThan(10);
+    expect(tools.size).toBeGreaterThan(20);
     for (const tool of tools.values()) {
       expect(tool.annotations?.openWorldHint, tool.name).toBe(false);
-    }
-
-    const shared = new McpServer({ name: 'test', version: '1.0.0' });
-    const sharedTools = capture(shared);
-    registerTeamTools(shared, client);
-    registerTeachingTools(shared, client);
-    for (const tool of sharedTools.values()) {
-      expect(tool.annotations?.openWorldHint, tool.name).toBe(true);
     }
   });
 });
