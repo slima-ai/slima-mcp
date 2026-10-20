@@ -34,7 +34,7 @@ export function registerBetaReaderTools(
         .optional()
         .describe('Filter by genre (e.g., fantasy, romance, scifi)'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ genre }) => {
       try {
         const personas = await client.listPersonas(genre);
@@ -95,7 +95,7 @@ export function registerBetaReaderTools(
         .string()
         .describe('Persona token (e.g., psn_xxx). Use list_personas to find available personas.'),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ book_token, file_path, persona_token }) => {
       try {
         // Gate: reject Script Studio books — AI Beta Reader does not parse
@@ -262,7 +262,7 @@ Use this rather than calling analyze_chapter again: the report is already runnin
         .string()
         .describe('Reader test token, as handed back by analyze_chapter when it timed out'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token, test_token }) => {
       try {
         const progress = await client.getReaderTestProgress(book_token, test_token);

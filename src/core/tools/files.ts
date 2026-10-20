@@ -67,6 +67,11 @@ const PATH_PARAM_HINT =
 // search_content filters them by default (override with include_structured: true).
 const SCRIPT_STRUCTURED_EXTENSIONS = ['character', 'scene', 'storyline', 'note', 'location'];
 
+/** Characters (Unicode code points), so Chinese and emoji are not double counted. */
+function countChars(text: string): number {
+  return [...text].length;
+}
+
 /**
  * Register file operation tools
  */
@@ -82,7 +87,7 @@ export function registerFileTools(
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       path: z.string().describe('File path (e.g., "characters/protagonist.md" or "chapter-01.md")'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token, path }) => {
       try {
         const result = await client.readFile(book_token, path);
@@ -111,7 +116,7 @@ ${AI_READONLY_WARNING}`,
       content: z.string().describe('New content to write'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ book_token, path, content, commit_message }) => {
       try {
         const result = await client.updateFile(book_token, {
@@ -153,7 +158,7 @@ ${AI_READONLY_WARNING}`,
       replace_all: z.boolean().optional().describe('Replace all occurrences (default: false, replaces only the first match)'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ book_token, path, old_string, new_string, replace_all, commit_message }) => {
       try {
         // Delegates outright: no read-then-write here. A local read-modify-write
@@ -208,7 +213,7 @@ ${AI_READONLY_WARNING}`,
         .describe(CONTENT_TYPE_HINT),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ book_token, path, content, content_type, commit_message }) => {
       try {
         const result = await client.createFile(book_token, {
@@ -268,7 +273,7 @@ ${AI_READONLY_WARNING}`,
         .optional()
         .describe('Required to delete a folder that is not empty — everything inside goes with it'),
     },
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ book_token, path, commit_message, recursive }) => {
       try {
         const result = await client.deleteFile(book_token, {
@@ -310,6 +315,9 @@ ${AI_READONLY_WARNING}`,
   server.tool(
     'append_to_file',
     `Append content to the end of an existing file (creates a new commit).
+
+Appending is NOT idempotent: sending the same call twice writes the text twice. If a call was blocked, timed out, errored, or you are not sure whether it went through, call \`read_file\` on the file first and check whether your text is already there; resend only if it is missing.
+To make a resend safe, pass \`base_version\` — the Version printed by \`read_file\` or by your previous \`append_to_file\`. If the file has changed since that version, nothing is appended and you are told to check.
 ${SCRIPT_STUDIO_WRITE_WARNING}
 ${AI_READONLY_WARNING}`,
     {
@@ -317,24 +325,73 @@ ${AI_READONLY_WARNING}`,
       path: z.string().describe(PATH_PARAM_HINT),
       content: z.string().describe('Content to append'),
       commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
+      base_version: z
+        .string()
+        .optional()
+        .describe(
+          'Optional. The file Version you last saw (printed by read_file and by append_to_file). ' +
+            'If the file has changed since then, nothing is appended — it may already contain your text from an earlier attempt. ' +
+            'Pass it when retrying after a blocked or uncertain call.'
+        ),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async ({ book_token, path, content, commit_message }) => {
+    // Closed domain: the author's own Slima account, no open-world side effects.
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    async ({ book_token, path, content, commit_message, base_version }) => {
       try {
+        if (base_version) {
+          const current = await client.readFile(book_token, path);
+          const nowVersion = current?.file?.blobHash;
+          if (nowVersion && nowVersion !== base_version) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: [
+                    'Nothing was appended.',
+                    '',
+                    `"${path}" has changed since version ${base_version} (it is now ${nowVersion}). An earlier attempt may already have written your text.`,
+                    'Call read_file to check whether the text is there. Resend only if it is missing, and pass the new Version as base_version.',
+                  ].join('\n'),
+                },
+              ],
+            };
+          }
+        }
+
         const result = await client.appendToFile(book_token, {
           path,
           content,
           commitMessage: commit_message,
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Content appended successfully.\n\nCommit: ${result.commit.token}\nMessage: ${result.commit.name || result.commit.message}`,
-            },
-          ],
-        };
+        const lines = [
+          'Content appended successfully.',
+          '',
+          `Commit: ${result.commit.token}`,
+          `Message: ${result.commit.name || result.commit.message}`,
+          `Appended: ${countChars(content)} characters`,
+        ];
+        // Read the file back so the reply says how long it is now and which version it is.
+        // Best effort: the append already happened, so a failed read must not turn this into an error.
+        try {
+          const after = await client.readFile(book_token, path);
+          if (typeof after?.content === 'string') {
+            lines.push(
+              `File now: ${countChars(after.content)} characters` +
+                (typeof after.file?.wordCount === 'number' ? ` (Slima word count: ${after.file.wordCount})` : '')
+            );
+          }
+          if (after?.file?.blobHash) {
+            lines.push(
+              `Version: ${after.file.blobHash}`,
+              'If you have to retry an append to this file, pass this Version as base_version.'
+            );
+          }
+        } catch {
+          lines.push('(Could not read the file back to report its new length; use read_file to check.)');
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
       } catch (error) {
         return {
           content: [{ type: 'text', text: formatErrorForMcp(error) }],
@@ -358,7 +415,7 @@ To change one, use \`update_relationship_map\` (one field at a time). A \`.map\`
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       path: z.string().describe('Path to a .map file (e.g., "world/relations.map")'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token, path }) => {
       try {
         const result = await client.visualizeFile(book_token, path);
@@ -435,7 +492,7 @@ Writing Studio books are unaffected by this filter.`,
           'Script Studio only: set to true to include structured files (*.character / *.scene / etc.) in search results. Default: false (excluded).'
         ),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token, query, file_types, limit, include_structured }) => {
       try {
         // Only fetch the book when we actually need to decide about filtering.

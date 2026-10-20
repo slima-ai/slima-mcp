@@ -55,7 +55,7 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
       author_name: z.string().optional().describe('Author name (optional)'),
       description: z.string().optional().describe('Book description (optional)'),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ title, author_name, description }) => {
       try {
         const book = await client.createBook({
@@ -88,7 +88,7 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
     {
       page: z.number().optional().describe('Page number (default 1). Only needed when the response says more books exist.'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ page }) => {
       try {
         const { books, meta } = await client.listBooks({ page });
@@ -152,7 +152,7 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
     {
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token }) => {
       try {
         const book = await client.getBook(book_token);
@@ -193,7 +193,7 @@ please use the Slima app UI — MCP does not yet support Script Studio scaffoldi
     {
       book_token: z.string().describe('Book token'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token }) => {
       try {
         const [book, commits] = await Promise.all([
@@ -252,7 +252,7 @@ figures are account-level and are not exposed here.`,
     {
       book_token: z.string().describe('Book token'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token }) => {
       try {
         const book = await client.getBook(book_token);

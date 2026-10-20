@@ -16,7 +16,7 @@ const READ_ONLY = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
-  openWorldHint: true,
+  openWorldHint: false,
 } as const;
 
 function json(body: unknown) {

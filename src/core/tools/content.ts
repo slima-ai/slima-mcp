@@ -24,7 +24,7 @@ export function registerContentTools(
       book_token: z.string().describe('Book token (e.g., bk_abc123)'),
       file_path: z.string().describe('File path (e.g., /chapters/01.md) or just a filename (e.g., 01.md)'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { readOnlyHint: true, openWorldHint: false },
     async ({ book_token, file_path }) => {
       const normalized = file_path.replace(/^\//, '');
 
