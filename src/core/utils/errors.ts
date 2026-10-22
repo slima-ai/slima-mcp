@@ -86,7 +86,7 @@ export function formatErrorForMcp(error: unknown): string {
       case 'UNAUTHORIZED':
         return 'Invalid API token. Please check your configuration.';
       case 'INSUFFICIENT_CREDITS':
-        return 'Insufficient credits. Please top up your account.';
+        return 'Insufficient credits for this action.';
       case 'TOKEN_EXPIRED':
         return 'API token has expired. Please generate a new one.';
       case 'TOKEN_REVOKED':

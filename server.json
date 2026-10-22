@@ -19,7 +19,8 @@
         {
           "name": "SLIMA_API_TOKEN",
           "description": "Your Slima API token (starts with slima_). Get it from https://app.slima.ai/settings",
-          "required": true
+          "isRequired": true,
+          "isSecret": true
         }
       ]
     }

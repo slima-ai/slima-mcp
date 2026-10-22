@@ -23,6 +23,19 @@ describe('server.json (official MCP Registry)', () => {
     expect(npm.version).toBe(pkg.version);
   });
 
+  it('declares environment variables with the registry schema field names (isRequired / isSecret)', () => {
+    // 2025-12-11 server.schema.json: an Input has `isRequired` and `isSecret`. `required` is not a
+    // field there, so the token was published as optional and not secret. A registry entry cannot
+    // be taken back once published, which is why this is checked before, not after.
+    const npm = serverJson.packages.find((p: { registryType: string }) => p.registryType === 'npm');
+    const token = npm.environmentVariables.find((e: { name: string }) => e.name === 'SLIMA_API_TOKEN');
+    expect(token.isRequired).toBe(true);
+    expect(token.isSecret).toBe(true);
+    for (const env of npm.environmentVariables) {
+      expect(Object.keys(env), `${env.name}: use isRequired, not required`).not.toContain('required');
+    }
+  });
+
   it('names the same npm package and MCP name as package.json', () => {
     const npm = serverJson.packages.find((p: { registryType: string }) => p.registryType === 'npm');
     expect(npm.identifier).toBe(pkg.name);
