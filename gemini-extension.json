@@ -1,0 +1,19 @@
+{
+  "name": "slima-mcp",
+  "version": "0.3.2",
+  "description": "Read and write your novels in Slima, the AI writing IDE: browse books, edit chapters with version history, and run AI Beta Reader tests from Gemini CLI.",
+  "mcpServers": {
+    "slima": {
+      "command": "npx",
+      "args": ["-y", "slima-mcp@0"]
+    }
+  },
+  "settings": [
+    {
+      "name": "Slima API Token",
+      "description": "Your Slima API token (starts with slima_). Create one at https://app.slima.ai/settings/api-tokens",
+      "envVar": "SLIMA_API_TOKEN",
+      "sensitive": true
+    }
+  ]
+}

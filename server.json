@@ -6,12 +6,12 @@
     "url": "https://github.com/slima-ai/slima-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "slima-mcp",
-      "version": "0.2.0",
+      "version": "0.3.2",
       "transport": {
         "type": "stdio"
       },
@@ -19,7 +19,8 @@
         {
           "name": "SLIMA_API_TOKEN",
           "description": "Your Slima API token (starts with slima_). Get it from https://app.slima.ai/settings",
-          "required": true
+          "isRequired": true,
+          "isSecret": true
         }
       ]
     }

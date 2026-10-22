@@ -204,7 +204,9 @@ export function registerStructuredTools(server: McpServer, client: SlimaApiClien
               'keys are that operation\'s arguments. There is no nested `args`.'
           ),
       },
-      { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      // Each call can remove or overwrite cards, nodes and fields (remove_* / update_* operations), so
+      // by the MCP spec it is destructive, not merely additive.
+      { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
       async ({ book_token, path, intent, operations }) => {
         try {
           const result = await client.applyStructuredOps(book_token, {

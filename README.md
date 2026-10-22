@@ -137,6 +137,12 @@ Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens) o
 gemini mcp add slima --command "npx -y slima-mcp@0"
 ```
 
+Or install it as a Gemini CLI extension (it asks for your API token once and keeps it in the system keychain):
+
+```bash
+gemini extensions install https://github.com/slima-ai/slima-mcp
+```
+
 > **Why `slima-mcp@0` instead of `slima-mcp` / `slima-mcp@latest`?** Using `@0` pins to the current major version — npx fetches new `0.x.y` releases automatically (so you get features + bug fixes), but when we ship `1.0.0` with breaking changes you won't silently pick it up without updating your config. We'll announce the `@1` switch in the release notes.
 >
 > ⚠️ **This only holds if you do not also have a global `slima-mcp` install.** `npx pkg@<range>`
@@ -218,34 +224,83 @@ For per-book details, ask your AI client to read the resource `slima://books/{bo
 
 ## Available Tools
 
+39 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
+
+### Start here (teaching)
+
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `get_capabilities` | R | What this server supports: writable file types, content types, tools, guides |
+| `list_guides` | R | List the Slima guides and when to load each |
+| `load_guide` | R | Load one guide in full |
+| `list_writing_skills` | R | List the writing craft procedures (develop a character, revise a scene, ...) |
+| `load_writing_skill` | R | Load one writing skill in full |
+
 ### Book Management
 
-| Tool | Description |
-|------|-------------|
-| `create_book` | Create a new book in your library |
-| `list_books` | List all books in your Slima library |
-| `get_book` | Get details of a specific book |
-| `get_book_structure` | Get the file/folder structure of a book |
-| `get_writing_stats` | Get writing statistics for a book |
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `create_book` | W | Create a new Writing Studio book in your library |
+| `list_books` | R | List the books in your library (paginated) |
+| `get_book` | R | Get details of a specific book |
+| `get_book_structure` | R | Get the file/folder structure of a book |
+| `get_writing_stats` | R | Get word-count totals for a book |
 
 ### File Operations
 
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read content of any file by path |
-| `edit_file` | Edit specific text using search & replace |
-| `write_file` | Replace entire content of a file |
-| `create_file` | Create a new file in a book |
-| `delete_file` | Delete a file from a book |
-| `append_to_file` | Append content to end of a file |
-| `search_content` | Search for text across all files |
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `read_file` | R | Read the content of any file by path |
+| `get_chapter` | R | Read a chapter by path or file name |
+| `edit_file` | W | Replace a specific text segment (search and replace) |
+| `write_file` | W | Replace the entire content of an existing file |
+| `create_file` | W | Create a new file in a book |
+| `delete_file` | W | Delete a file or an empty folder |
+| `append_to_file` | W | Append content to the end of a file |
+| `search_content` | R | Search for text across all files |
+| `semantic_search` | R | Find passages by meaning rather than exact words |
+
+Every write is a commit in the book's version history, so it can be reviewed and reverted.
+
+### Structured Files (one field at a time)
+
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `view_relationship_map` | R | See a `.map` relationship graph as a picture plus a readable summary |
+| `update_relationship_map` | W | Change a relationship map (`.map`) |
+| `update_beat_board` | W | Change a beat board (`.beats`) |
+| `update_timeline` | W | Change a timeline (`.timeline`) |
+| `update_script` | W | Change a screenplay (`.script`) |
+| `update_world_map` | W | Change a world map (`.geomap`) |
+
+### Notes and Comments
+
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `list_notes` | R | The author's margin notes on a book |
+| `create_note` | W | Leave a note beside the manuscript (does not touch the prose) |
+| `list_comments` | R | Editorial comment threads, open and resolved |
+| `create_comment` | W | Leave an editorial comment |
+| `resolve_comment` | W | Mark a comment thread addressed |
+| `reopen_comment` | W | Reopen a resolved comment thread |
 
 ### AI Beta Reader
 
-| Tool | Description |
-|------|-------------|
-| `list_personas` | List available beta reader personas |
-| `analyze_chapter` | Get AI beta reader feedback on a chapter |
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `list_personas` | R | List the virtual reader personas |
+| `analyze_chapter` | W | Run AI Beta Reader feedback on a chapter from one persona (spends the author's credits) |
+| `get_reader_test` | R | Collect a Beta Reader report that was still running |
+
+### Teams
+
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `list_teams` | R | List the teams this account belongs to |
+| `get_team` | R | One team: its members and roles |
+| `list_team_rules` | R | The team's coaching rules (house style) |
+| `list_team_memories` | R | What the team has established: recurring characters, naming conventions, decisions |
+| `list_team_skills` | R | The team's own writing procedures |
 
 ## Usage Examples
 
