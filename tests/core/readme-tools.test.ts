@@ -32,3 +32,24 @@ describe('README Available Tools', () => {
     if (claim) expect(Number(claim[1])).toBe(Object.keys(TOOL_TITLES).length);
   });
 });
+
+describe('where the author manages tokens', () => {
+  // app.slima.ai/settings/api-tokens is not a page; the list of connected apps is
+  // Account settings -> "Authorized Apps" at /account/api-tokens (slima_vue router,
+  // checked 2026-10-22). The README and the CLI both sent people to the old path.
+  const files: Record<string, string> = {
+    'README.md': readme,
+    'src/cli/index.ts': readFileSync('src/cli/index.ts', 'utf-8'),
+  };
+
+  for (const [file, text] of Object.entries(files)) {
+    it(`${file} does not point at the old settings/api-tokens path`, () => {
+      expect(text).not.toContain('settings/api-tokens');
+    });
+  }
+
+  it('README names the page the way the app does', () => {
+    expect(readme).toContain('app.slima.ai/account/api-tokens');
+    expect(readme).toContain('Authorized Apps');
+  });
+});

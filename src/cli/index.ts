@@ -91,7 +91,7 @@ async function startServer(): Promise<void> {
     logger.error('Or set environment variable:');
     logger.error('  SLIMA_API_TOKEN=your_token slima-mcp');
     logger.error('');
-    logger.error('Get your API token from: https://app.slima.ai/settings/api-tokens');
+    logger.error('Get your API token from: https://app.slima.ai/account/api-tokens');
     process.exit(1);
   }
 

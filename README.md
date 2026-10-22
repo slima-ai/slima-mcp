@@ -113,7 +113,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens) or run `npx slima-mcp@0 auth` once to save it to disk.
+Get your token from [Account settings → Authorized Apps](https://app.slima.ai/account/api-tokens) or run `npx slima-mcp@0 auth` once to save it to disk.
 
 #### Cursor
 
@@ -199,7 +199,7 @@ The hosted Remote MCP Server at `https://mcp.slima.ai/mcp` uses:
 - **OAuth 2.0 + PKCE** for authentication — no tokens copy-pasted.
 - **No secrets stored server-side** — credentials never leave Slima's auth server.
 - **Session-based**: OAuth tokens are stored in Cloudflare KV, scoped per session.
-- **Revocable anytime** from [Slima Settings](https://app.slima.ai/settings/api-tokens).
+- **Revocable anytime** from [Account settings → Authorized Apps](https://app.slima.ai/account/api-tokens): revoking an app takes effect on its next request.
 
 ---
 
