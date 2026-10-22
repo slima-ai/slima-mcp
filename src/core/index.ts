@@ -18,6 +18,8 @@ export {
   registerContentTools,
   registerBetaReaderTools,
   registerFileTools,
+  registerAllTools,
+  TOOL_TITLES,
 } from './tools/index.js';
 
 // Tool-schema compatibility (Gemini's strict parameters proto)

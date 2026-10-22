@@ -137,6 +137,12 @@ Get your token from [Slima Settings](https://app.slima.ai/settings/api-tokens) o
 gemini mcp add slima --command "npx -y slima-mcp@0"
 ```
 
+Or install it as a Gemini CLI extension (it asks for your API token once and keeps it in the system keychain):
+
+```bash
+gemini extensions install https://github.com/slima-ai/slima-mcp
+```
+
 > **Why `slima-mcp@0` instead of `slima-mcp` / `slima-mcp@latest`?** Using `@0` pins to the current major version — npx fetches new `0.x.y` releases automatically (so you get features + bug fixes), but when we ship `1.0.0` with breaking changes you won't silently pick it up without updating your config. We'll announce the `@1` switch in the release notes.
 >
 > ⚠️ **This only holds if you do not also have a global `slima-mcp` install.** `npx pkg@<range>`

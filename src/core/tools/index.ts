@@ -6,3 +6,5 @@ export { registerStructuredTools } from './structured.js';
 export { registerTeachingTools } from './teaching.js';
 export { registerTeamTools } from './teams.js';
 export { registerWorkspaceTools } from './workspace.js';
+export { registerAllTools } from './register-all.js';
+export { TOOL_TITLES } from './titles.js';
