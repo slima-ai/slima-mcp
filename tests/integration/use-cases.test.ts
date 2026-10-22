@@ -357,26 +357,11 @@ describe('Use Case: Beta Reader Feedback', () => {
     expect(personasResult.content[0].text).toContain('浪漫文學迷');
 
     // Step 2: Setup mocks for analyze_chapter
-    // analyze_chapter needs: listCommits -> downloadBlobs -> createReaderTest -> poll -> getReaderTest
-    (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        token: 'cmt_1',
-        filesSnapshot: [
-          {
-            token: 'fl_ch01',
-            name: 'chapter-01.md',
-            path: 'chapters/chapter-01.md',
-            kind: 'file',
-            blobHash: 'sha256:abc123',
-            position: 0,
-          },
-        ],
-      },
-    ]);
-
-    (mockClient.downloadBlobs as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { hash: 'sha256:abc123', content: '# 第一章：冒險的開始\n\n主角踏上了冒險的旅程...' },
-    ]);
+    // analyze_chapter needs: readFile (mcp/files/read) -> createReaderTest -> poll -> getReaderTest
+    (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      file: { token: 'fl_ch01', name: 'chapter-01.md', path: 'chapters/chapter-01.md', kind: 'file', wordCount: 12 },
+      content: '# 第一章：冒險的開始\n\n主角踏上了冒險的旅程...',
+    });
 
     (mockClient.createReaderTest as ReturnType<typeof vi.fn>).mockResolvedValue({
       token: 'rt_test123',
@@ -522,27 +507,11 @@ describe('Use Case: Error Handling', () => {
   });
 
   it('should handle insufficient credits for beta reader', async () => {
-    // analyze_chapter calls listCommits first to get filesSnapshot
-    (mockClient.listCommits as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        token: 'cmt_1',
-        filesSnapshot: [
-          {
-            token: 'fl_ch01',
-            name: 'chapter-01.md',
-            path: 'chapter-01.md',
-            kind: 'file',
-            blobHash: 'sha256:abc',
-            position: 0,
-          },
-        ],
-      },
-    ]);
-
-    // Mock downloadBlobs which is called before createReaderTest
-    mockClient.downloadBlobs = vi.fn().mockResolvedValue([
-      { hash: 'sha256:abc', content: 'Test chapter content' },
-    ]);
+    // analyze_chapter reads the chapter through mcp/files/read before it creates the report
+    (mockClient.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      file: { token: 'fl_ch01', name: 'chapter-01.md', path: 'chapter-01.md', kind: 'file', wordCount: 3 },
+      content: 'Test chapter content',
+    });
 
     (mockClient.createReaderTest as ReturnType<typeof vi.fn>).mockRejectedValue(
       new InsufficientCreditsError()

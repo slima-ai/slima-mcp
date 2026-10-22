@@ -7,7 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient } from '../api/client.js';
 import { formatErrorForMcp, NotFoundError } from '../utils/errors.js';
 import { renderFileRead } from './file-read-rendering.js';
-import type { FileSnapshot } from '../api/types.js';
+import { resolveFromStructure } from './read-resolving.js';
 
 /**
  * Register content access tools
@@ -81,66 +81,3 @@ export function registerContentTools(
     }
   );
 }
-
-/** Full path of a snapshot entry, walking parentToken up to the root. */
-function fullPathOf(entry: FileSnapshot, byToken: Map<string, FileSnapshot>): string {
-  const parts = [entry.name];
-  let current: FileSnapshot | undefined = entry;
-  let depth = 0;
-
-  while (current) {
-    const parentToken = (current as unknown as { parentToken?: string }).parentToken;
-    if (!parentToken) break;
-    const parent: FileSnapshot | undefined = byToken.get(parentToken);
-    if (!parent || depth++ > byToken.size) break;
-    parts.unshift(parent.name);
-    current = parent;
-  }
-
-  return parts.join('/');
-}
-
-function flatten(files: FileSnapshot[]): FileSnapshot[] {
-  // Snapshots are flat (parentToken) in current data, but older ones nested
-  // children — handle both rather than silently seeing half the tree.
-  return files.flatMap((f) => [f, ...(f.children ? flatten(f.children) : [])]);
-}
-
-/**
- * Resolve a loose reference (bare filename, partial path, case-insensitive) to
- * one real path, AND return every available path for the not-found hint — both
- * from a single snapshot fetch.
- */
-async function resolveFromStructure(
-  client: SlimaApiClient,
-  bookToken: string,
-  needle: string
-): Promise<{ resolvedPath: string | null; availablePaths: string[] }> {
-  const commits = await client.listCommits(bookToken, 1);
-  if (commits.length === 0) return { resolvedPath: null, availablePaths: [] };
-
-  const entries = flatten((commits[0].filesSnapshot ?? []) as FileSnapshot[]);
-  const byToken = new Map(entries.map((e) => [e.token, e]));
-  const wanted = needle.toLowerCase();
-
-  const stripExt = (value: string) => value.replace(/\.[^./]+$/, '');
-  const candidates = entries.filter((e) => e.kind !== 'folder');
-
-  // Same set of loose forms the previous implementation accepted (exact path,
-  // bare name, file token, name without extension) — narrowing it here would be
-  // a silent capability regression for anyone whose prompts rely on it.
-  const match =
-    candidates.find((e) => fullPathOf(e, byToken).toLowerCase() === wanted) ??
-    candidates.find((e) => e.name.toLowerCase() === wanted) ??
-    candidates.find((e) => e.token.toLowerCase() === wanted) ??
-    candidates.find((e) => fullPathOf(e, byToken).toLowerCase().endsWith(`/${wanted}`)) ??
-    candidates.find((e) => stripExt(e.name.toLowerCase()) === stripExt(wanted));
-
-  return {
-    resolvedPath: match ? fullPathOf(match, byToken) : null,
-    availablePaths: candidates.map((e) => fullPathOf(e, byToken)),
-  };
-}
-
-
-
