@@ -69,6 +69,22 @@ describe('tools/list as the directory portal reads it', () => {
     }
   });
 
+  it('marks destructiveHint truthfully: only tools that purely ADD are false, anything that overwrites, deletes or changes existing state is true', () => {
+    // MCP spec: destructiveHint=false means the tool only performs additive updates.
+    // Maintainer ruling 2026-10-22: update_*, delete_*, whole-file writes and edits, and the
+    // comment status changes are true. Claude may ask the author once more before calling
+    // them; that is accepted, and an honest annotation is what the directory review checks.
+    // To add a tool to the additive list, it has to really leave existing content untouched.
+    const ADDITIVE = new Set(['create_book', 'create_file', 'append_to_file', 'create_note', 'create_comment', 'analyze_chapter']);
+
+    const writers = tools.filter((t) => !t.annotations?.readOnlyHint);
+    expect(writers.length).toBeGreaterThanOrEqual(16);
+    for (const tool of writers) {
+      const expected = !ADDITIVE.has(tool.name);
+      expect(tool.annotations?.destructiveHint, `${tool.name}: destructiveHint`).toBe(expected);
+    }
+  });
+
   it('keeps tool names within the 64-character limit', () => {
     for (const tool of tools) {
       expect(tool.name.length, tool.name).toBeLessThanOrEqual(64);

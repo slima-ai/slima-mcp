@@ -19,10 +19,21 @@ const READ_ONLY = {
   openWorldHint: false,
 } as const;
 
+// Only adds: a new note or comment. Nothing that already exists is touched.
 const WRITES = {
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: false,
+  openWorldHint: false,
+} as const;
+
+// Changes the state of something that already exists (a comment thread's open/resolved
+// status). By the MCP spec `destructiveHint: false` means "additive updates only", so
+// this is true even though it is reversible: resolve and reopen undo each other.
+const CHANGES_EXISTING = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
   openWorldHint: false,
 } as const;
 
@@ -153,7 +164,7 @@ Say what you did when you resolve one. A silent resolve tells the editor nothing
       book_token: BOOK_TOKEN,
       comment_token: z.string().describe('Comment token (from list_comments)'),
     },
-    WRITES,
+    CHANGES_EXISTING,
     async ({ book_token, comment_token }) => {
       try {
         return json(await client.resolveComment(book_token, comment_token));
@@ -170,7 +181,7 @@ Say what you did when you resolve one. A silent resolve tells the editor nothing
       book_token: BOOK_TOKEN,
       comment_token: z.string().describe('Comment token (from list_comments)'),
     },
-    WRITES,
+    CHANGES_EXISTING,
     async ({ book_token, comment_token }) => {
       try {
         return json(await client.reopenComment(book_token, comment_token));
