@@ -53,7 +53,12 @@ export const GEMINI_REJECTED_SCHEMA_KEYS = [
 /**
  * The subset we strip automatically.
  *
- * Deliberately only these two, NOT all of GEMINI_REJECTED_SCHEMA_KEYS. These two carry no
+ * `propertyNames` arrived with zod 4 (z.record(z.string(), …) → `propertyNames: {type: 'string'}`).
+ * JSON object keys are always strings, so it says nothing a caller can act on; it is stripped
+ * rather than shipped because it has never been measured against Gemini's `parameters` proto,
+ * and the zod-3 catalogue (which Gemini accepted) never carried it.
+ *
+ * Deliberately only these, NOT all of GEMINI_REJECTED_SCHEMA_KEYS. These carry no
  * meaning a tool caller can act on, so removing them is lossless. The rest do carry
  * meaning — dropping a `$ref` leaves `{}` (a schema that describes nothing), dropping a
  * `const` silently widens an argument the tool actually constrains. Quietly mangling a
@@ -61,7 +66,7 @@ export const GEMINI_REJECTED_SCHEMA_KEYS = [
  * guard test in tests/worker/tool-schema-compat.test.ts turns red the day a tool starts
  * emitting one. Fix it at the zod shape then, not here.
  */
-export const STRIPPED_SCHEMA_KEYS = ['$schema', 'additionalProperties'] as const;
+export const STRIPPED_SCHEMA_KEYS = ['$schema', 'additionalProperties', 'propertyNames'] as const;
 
 const STRIPPED = new Set<string>(STRIPPED_SCHEMA_KEYS);
 

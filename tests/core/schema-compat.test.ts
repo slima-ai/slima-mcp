@@ -58,6 +58,20 @@ describe('stripIncompatibleSchemaKeys', () => {
     expect(stripIncompatibleSchemaKeys(schema)).toEqual(schema);
   });
 
+  it('drops the propertyNames that zod 4 emits for z.record(z.string(), …), so the catalogue stays what zod 3 published', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        operations: { type: 'array', items: { type: 'object', propertyNames: { type: 'string' } } },
+      },
+    };
+
+    expect(stripIncompatibleSchemaKeys(schema)).toEqual({
+      type: 'object',
+      properties: { operations: { type: 'array', items: { type: 'object' } } },
+    });
+  });
+
   it('does not mutate the input', () => {
     const schema = { $schema: 'x', type: 'object', properties: {} };
     stripIncompatibleSchemaKeys(schema);
