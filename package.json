@@ -1,6 +1,6 @@
 {
   "name": "slima-mcp",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "mcpName": "io.github.slima-ai/slima",
   "description": "MCP Server for Slima - AI Writing IDE for Novel Authors. Connect your books with Claude, ChatGPT, Gemini, Cursor, and any MCP-compatible AI tool.",
   "type": "module",
@@ -61,7 +61,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "hono": "^4.0.0",
-    "zod": "^3.23.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

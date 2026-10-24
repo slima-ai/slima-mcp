@@ -6,7 +6,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SlimaApiClient, Logger } from '../api/client.js';
 import { formatErrorForMcp } from '../utils/errors.js';
-import type { FileSnapshot, ReaderTest, IndividualFeedback, AggregatedMetrics } from '../api/types.js';
+import { readFileResolving } from './read-resolving.js';
+import type { ReaderTest, IndividualFeedback, AggregatedMetrics } from '../api/types.js';
 
 // Default no-op logger
 const defaultLogger: Logger = {
@@ -114,25 +115,12 @@ export function registerBetaReaderTools(
           };
         }
 
-        // 1. Get latest commit and chapter content
-        const commits = await client.listCommits(book_token, 1);
+        // 1. Read the chapter through Rails' audited mcp/files/read (the same path
+        // get_chapter uses). It resolves a bare filename too, and it is the only read
+        // path that enforces the confidential-skill audit trail and read budget.
+        const read = await readFileResolving(client, book_token, file_path);
 
-        if (commits.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'No commits found. The book may be empty.',
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // 2. Find file
-        const file = findFileInSnapshot(commits[0].filesSnapshot, file_path);
-
-        if (!file) {
+        if (read.kind === 'not_found') {
           return {
             content: [
               {
@@ -144,7 +132,37 @@ export function registerBetaReaderTools(
           };
         }
 
-        if (!file.blobHash) {
+        const { result: file } = read;
+
+        // 2. A confidential team skill (or a spent read budget) comes back with no
+        // content. Nothing may be sent to the Beta Reader, and nothing is charged.
+        if (file.contentWithheld) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `File "${file_path}" cannot be analyzed: its content is withheld from this account (a confidential team skill).`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        if (file.throttled) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `File "${file_path}" cannot be analyzed right now: the daily read limit for this team's skills is spent.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const content = file.content;
+
+        if (!content) {
           return {
             content: [
               {
@@ -156,30 +174,15 @@ export function registerBetaReaderTools(
           };
         }
 
-        // 3. Download content
-        const blobs = await client.downloadBlobs(book_token, [file.blobHash]);
-
-        if (blobs.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'Could not retrieve file content.',
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const content = blobs[0].content;
-
+        // 3. The report is not pinned to a commit: the read endpoint returns the
+        // current content but not which commit it came from, and the report only
+        // needs the text it was given.
         // 4. Create Reader Test
         logger.info(`Creating reader test for ${file_path} with persona ${persona_token}`);
 
         const test = await client.createReaderTest(book_token, {
           reportType: 'chapter',
           personaTokens: [persona_token],
-          commitToken: commits[0].token,
           scopeConfig: { chapters: [file_path] },
           content: content,
         });
@@ -231,7 +234,7 @@ Do NOT call analyze_chapter again for this chapter — that starts a separate re
         const fullResult = await client.getReaderTest(book_token, test.token);
 
         // 7. Format feedback
-        const feedback = formatBetaReaderFeedback(fullResult, file.name);
+        const feedback = formatBetaReaderFeedback(fullResult, file.file.name);
 
         return {
           content: [{ type: 'text', text: feedback }],
@@ -534,84 +537,4 @@ function formatIndividualFeedback(feedback: IndividualFeedback): string {
   }
 
   return output;
-}
-
-/**
- * Find file in snapshot
- */
-function findFileInSnapshot(
-  files: FileSnapshot[],
-  path: string
-): FileSnapshot | null {
-  const normalizedPath = path.replace(/^\//, '').toLowerCase();
-  const pathParts = normalizedPath.split('/');
-
-  function search(
-    items: FileSnapshot[],
-    remainingParts: string[]
-  ): FileSnapshot | null {
-    for (const item of items) {
-      const itemNameLower = item.name.toLowerCase();
-      const itemTokenLower = item.token.toLowerCase();
-
-      if (remainingParts.length === 1) {
-        const target = remainingParts[0];
-        if (
-          itemNameLower === target ||
-          itemTokenLower === target ||
-          itemNameLower.replace(/\.[^.]+$/, '') === target.replace(/\.[^.]+$/, '')
-        ) {
-          return item;
-        }
-      }
-
-      if (item.kind === 'folder' && item.children) {
-        if (
-          itemNameLower === remainingParts[0] ||
-          itemTokenLower === remainingParts[0]
-        ) {
-          const result = search(item.children, remainingParts.slice(1));
-          if (result) return result;
-        }
-
-        const result = search(item.children, remainingParts);
-        if (result) return result;
-      }
-    }
-
-    return null;
-  }
-
-  let result = search(files, pathParts);
-  if (result) return result;
-
-  result = searchByName(files, pathParts[pathParts.length - 1]);
-  return result;
-}
-
-function searchByName(
-  files: FileSnapshot[],
-  name: string
-): FileSnapshot | null {
-  const nameLower = name.toLowerCase();
-
-  for (const item of files) {
-    const itemNameLower = item.name.toLowerCase();
-    const itemTokenLower = item.token.toLowerCase();
-
-    if (
-      itemNameLower === nameLower ||
-      itemTokenLower === nameLower ||
-      itemNameLower.replace(/\.[^.]+$/, '') === nameLower.replace(/\.[^.]+$/, '')
-    ) {
-      return item;
-    }
-
-    if (item.kind === 'folder' && item.children) {
-      const result = searchByName(item.children, name);
-      if (result) return result;
-    }
-  }
-
-  return null;
 }

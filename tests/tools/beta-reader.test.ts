@@ -6,12 +6,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SlimaApiClient } from '../../src/api/client.js';
 import { registerBetaReaderTools } from '../../src/tools/beta-reader.js';
-import { InsufficientCreditsError } from '../../src/utils/errors.js';
+import { InsufficientCreditsError, NotFoundError } from '../../src/utils/errors.js';
 
 describe('Beta Reader Tools', () => {
   let server: McpServer;
   let mockClient: {
     listPersonas: ReturnType<typeof vi.fn>;
+    readFile: ReturnType<typeof vi.fn>;
     listCommits: ReturnType<typeof vi.fn>;
     downloadBlobs: ReturnType<typeof vi.fn>;
     createReaderTest: ReturnType<typeof vi.fn>;
@@ -29,6 +30,7 @@ describe('Beta Reader Tools', () => {
     mockClient = {
       listPersonas: vi.fn(),
       getBook: vi.fn(),
+      readFile: vi.fn(),
       listCommits: vi.fn(),
       downloadBlobs: vi.fn(),
       createReaderTest: vi.fn(),
@@ -213,11 +215,14 @@ describe('Beta Reader Tools', () => {
         createdAt: '',
         updatedAt: '',
       });
+      // analyze_chapter reads through Rails' audited mcp/files/read — the same
+      // endpoint get_chapter uses — not commits + blob download.
+      mockClient.readFile.mockResolvedValue({
+        file: { token: 'ch01', name: 'chapter-01.md', path: 'chapter-01.md', kind: 'file', wordCount: 1000 },
+        content: 'Chapter content here...',
+      });
       mockClient.listCommits.mockResolvedValue([
         { token: 'cmt_1', filesSnapshot: mockFilesSnapshot },
-      ]);
-      mockClient.downloadBlobs.mockResolvedValue([
-        { hash: 'sha256:chapter1', content: 'Chapter content here...' },
       ]);
       mockClient.createReaderTest.mockResolvedValue({ token: 'rpt_test1', status: 'pending' });
       mockClient.getReaderTestProgress.mockResolvedValue({ status: 'completed', progress: 100 });
@@ -255,13 +260,49 @@ describe('Beta Reader Tools', () => {
       expect(mockClient.createReaderTest).toHaveBeenCalledWith('bk_test', {
         reportType: 'chapter',
         personaTokens: ['psn_fantasy1'],
-        commitToken: 'cmt_1',
         scopeConfig: { chapters: ['chapter-01.md'] },
         content: 'Chapter content here...',
       });
     });
 
-    it('should return error when no commits found', async () => {
+    it('reads the chapter through mcp/files/read and never through blob download', async () => {
+      // A mcp:books token is being narrowed to the endpoints the tools need. blobs/download
+      // is the one only this tool used; it also skipped the confidential-skill audit trail
+      // and read budget that mcp/files/read enforces.
+      const handler = toolHandlers.get('analyze_chapter')!;
+      await handler({ book_token: 'bk_test', file_path: 'chapter-01.md', persona_token: 'psn_fantasy1' });
+
+      expect(mockClient.readFile).toHaveBeenCalledWith('bk_test', 'chapter-01.md');
+      expect(mockClient.downloadBlobs).not.toHaveBeenCalled();
+    });
+
+    it('resolves a bare filename through the file tree when the exact path is not found', async () => {
+      mockClient.readFile
+        .mockRejectedValueOnce(new NotFoundError('File not found: ch01'))
+        .mockResolvedValueOnce({
+          file: { token: 'ch01', name: 'chapter-01.md', path: 'chapters/chapter-01.md', kind: 'file', wordCount: 1000 },
+          content: 'Chapter content here...',
+        });
+      mockClient.listCommits.mockResolvedValue([
+        {
+          token: 'cmt_1',
+          filesSnapshot: [
+            { token: 'fld', name: 'chapters', kind: 'folder', position: 0 },
+            { token: 'ch01', name: 'chapter-01.md', kind: 'file', position: 1, parentToken: 'fld', blobHash: 'sha256:x' },
+          ],
+        },
+      ]);
+
+      const handler = toolHandlers.get('analyze_chapter')!;
+      await handler({ book_token: 'bk_test', file_path: 'chapter-01', persona_token: 'psn_fantasy1' });
+
+      expect(mockClient.readFile).toHaveBeenLastCalledWith('bk_test', 'chapters/chapter-01.md');
+      expect(mockClient.createReaderTest).toHaveBeenCalled();
+      expect(mockClient.downloadBlobs).not.toHaveBeenCalled();
+    });
+
+    it('should return error when the file is not found and the book has no commits', async () => {
+      mockClient.readFile.mockRejectedValue(new NotFoundError('File not found: chapter.md'));
       mockClient.listCommits.mockResolvedValue([]);
 
       const handler = toolHandlers.get('analyze_chapter')!;
@@ -272,10 +313,12 @@ describe('Beta Reader Tools', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No commits found');
+      expect(result.content[0].text).toContain('File not found');
+      expect(mockClient.createReaderTest).not.toHaveBeenCalled();
     });
 
     it('should return error when file not found', async () => {
+      mockClient.readFile.mockRejectedValue(new NotFoundError('File not found: nonexistent.md'));
       const handler = toolHandlers.get('analyze_chapter')!;
       const result = await handler({
         book_token: 'bk_test',
@@ -288,14 +331,10 @@ describe('Beta Reader Tools', () => {
     });
 
     it('should return error when file has no content', async () => {
-      mockClient.listCommits.mockResolvedValue([
-        {
-          token: 'cmt_1',
-          filesSnapshot: [
-            { token: 'empty', name: 'empty.md', kind: 'file', position: 0, blobHash: null },
-          ],
-        },
-      ]);
+      mockClient.readFile.mockResolvedValue({
+        file: { token: 'empty', name: 'empty.md', path: 'empty.md', kind: 'file', wordCount: 0 },
+        content: '',
+      });
 
       const handler = toolHandlers.get('analyze_chapter')!;
       const result = await handler({
@@ -308,18 +347,36 @@ describe('Beta Reader Tools', () => {
       expect(result.content[0].text).toContain('has no content');
     });
 
-    it('should return error when blob download fails', async () => {
-      mockClient.downloadBlobs.mockResolvedValue([]);
-
-      const handler = toolHandlers.get('analyze_chapter')!;
-      const result = await handler({
-        book_token: 'bk_test',
-        file_path: 'chapter-01.md',
-        persona_token: 'psn_1',
+    it('refuses, and spends nothing, when the content is withheld (a confidential team skill)', async () => {
+      mockClient.readFile.mockResolvedValue({
+        file: { token: 'sk1', name: 'skill.md', path: 'skills/skill.md', kind: 'file', wordCount: 10 },
+        content: null,
+        contentWithheld: true,
+        withheldReason: 'confidential',
       });
 
+      const handler = toolHandlers.get('analyze_chapter')!;
+      const result = await handler({ book_token: 'bk_test', file_path: 'skills/skill.md', persona_token: 'psn_1' });
+
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Could not retrieve file content');
+      expect(result.content[0].text).toMatch(/withheld/i);
+      expect(mockClient.createReaderTest).not.toHaveBeenCalled();
+    });
+
+    it('refuses, and spends nothing, when the team read budget is spent', async () => {
+      mockClient.readFile.mockResolvedValue({
+        file: { token: 'sk1', name: 'skill.md', path: 'skills/skill.md', kind: 'file', wordCount: 10 },
+        content: null,
+        throttled: true,
+        throttledReason: 'daily budget',
+      });
+
+      const handler = toolHandlers.get('analyze_chapter')!;
+      const result = await handler({ book_token: 'bk_test', file_path: 'skills/skill.md', persona_token: 'psn_1' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/budget|limit/i);
+      expect(mockClient.createReaderTest).not.toHaveBeenCalled();
     });
 
     it('should handle analysis failure', async () => {
