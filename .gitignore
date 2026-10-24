@@ -33,3 +33,6 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# wrangler dev local state (miniflare KV, logs)
+.wrangler/
