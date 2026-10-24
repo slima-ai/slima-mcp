@@ -198,7 +198,7 @@ export function registerStructuredTools(server: McpServer, client: SlimaApiClien
               'commit message they read later. Not "batch update".'
           ),
         operations: z
-          .array(z.record(z.unknown()))
+          .array(z.record(z.string(), z.unknown()))
           .describe(
             'The changes, in order. Each is a flat object: `op` names the operation and the other ' +
               'keys are that operation\'s arguments. There is no nested `args`.'
