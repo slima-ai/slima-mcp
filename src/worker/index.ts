@@ -132,7 +132,7 @@ app.get('/', (c) => {
 // - HEAD: No auth (protocol version discovery)
 // - POST initialize/notifications/initialized: No auth (capability discovery)
 // - POST tools/list, tools/call, etc.: Auth required
-// - GET: Auth required (SSE stream)
+// - GET: authenticated -> 405 (this Worker is stateless and offers no SSE stream); no credentials -> 401
 app.all('/mcp', async (c, next) => {
   // HEAD /mcp - Protocol version discovery (MCP Streamable HTTP spec)
   // No auth required - Claude.ai sends HEAD to discover protocol version before auth
@@ -166,6 +166,25 @@ app.all('/mcp', async (c, next) => {
         // Body parse failed - fall through to requireAuth
       }
     }
+  }
+
+  // GET /mcp opens the optional server-to-client SSE stream. This Worker is stateless (a fresh server
+  // and transport per request, closed in `finally`), so it has no stream to offer. Answering 200 and
+  // then closing the stream made clients reconnect forever: one claude-code client did so ~2x/second
+  // for 24h and used up the account's free daily quota (2026-10-24, Cloudflare 1027).
+  // The MCP Streamable HTTP spec says a server that does not offer the stream MUST answer 405 and the
+  // SDK client then stops trying. A GET with no credentials still falls through to the 401 below, which
+  // clients use to discover OAuth; a client with no token does not loop.
+  if (c.req.method === 'GET' && (await getTokenFromSession(c))) {
+    workerLogger.info(`GET /mcp - 405, no SSE stream offered (UA ${c.req.header('User-Agent')?.slice(0, 50)})`);
+    return new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed: this server does not offer a GET SSE stream. Use POST.' },
+        id: null,
+      }),
+      { status: 405, headers: { 'Content-Type': 'application/json', Allow: 'POST, HEAD, OPTIONS' } }
+    );
   }
 
   // All other methods/requests require authentication
