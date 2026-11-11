@@ -11,7 +11,7 @@
   "settings": [
     {
       "name": "Slima API Token",
-      "description": "Your Slima API token (starts with slima_). Create one at https://app.slima.ai/settings/api-tokens",
+      "description": "Your Slima API token (starts with slima_). Create one at https://app.slima.ai/account/api-tokens",
       "envVar": "SLIMA_API_TOKEN",
       "sensitive": true
     }
