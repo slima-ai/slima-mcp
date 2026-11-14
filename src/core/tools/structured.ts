@@ -69,7 +69,19 @@ const TYPES: StructuredType[] = [
     extension: '.timeline',
     noun: 'timeline',
     ops: 'add_entry, update_entry, remove_entry, set_config',
-    example: '{"op": "add_entry", "title": "The siege begins", "time_mode": "label", "time_label": "Winter"}',
+    example:
+      '{"op": "add_entry", "title": "The siege begins", "time_mode": "label", "time_label": "Winter", ' +
+      '"add_tags": ["Shen Yan"]}, ' +
+      '{"op": "update_entry", "id": "<id from the read>", "remove_tags": ["Pei Zhao"], "add_tags": ["Dragon City"]}',
+    // iss_hsw3qzrcjzaxyikt — matches Rails Mcp::StructuredOps::Timeline (feat/iss-hsw3qzrc-timeline-tags 5db996fd).
+    extra:
+      '**標籤 (tags) by name.** `add_entry` and `update_entry` take `add_tags: ["name", …]`; `update_entry`\n' +
+      'also takes `remove_tags`. Copy names exactly from the 標籤 list in the read summary — the tags\n' +
+      'already on an event are shown after 軸：. Removal runs before adding; at most 8 tags per event.\n' +
+      'If a name exists in more than one axis you are told so: send `axis` (the axis title or id) with\n' +
+      '`add_tags`. **You cannot create a tag.** An unknown name refuses the whole batch and lists the\n' +
+      'real ones; if the author wants a new tag, tell them to add it with the ＋ 標籤 button above the\n' +
+      'timeline. Never fake a tag by writing its name into the title.',
   },
   {
     tool: 'update_script',
