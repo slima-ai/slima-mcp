@@ -4,6 +4,7 @@ import { registerBookTools } from './books.js';
 import { registerTeachingTools } from './teaching.js';
 import { registerTeamTools } from './teams.js';
 import { registerWorkspaceTools } from './workspace.js';
+import { registerMemoryTools } from './memory.js';
 import { registerContentTools } from './content.js';
 import { registerBetaReaderTools } from './beta-reader.js';
 import { registerFileTools } from './files.js';
@@ -23,6 +24,7 @@ export function registerAllTools(server: McpServer, client: SlimaApiClient, logg
   registerBookTools(server, client);
   registerTeamTools(server, client);
   registerWorkspaceTools(server, client);
+  registerMemoryTools(server, client);
   registerContentTools(server, client);
   registerBetaReaderTools(server, client, logger);
   registerFileTools(server, client);

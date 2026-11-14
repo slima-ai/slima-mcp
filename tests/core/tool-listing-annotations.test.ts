@@ -75,7 +75,7 @@ describe('tools/list as the directory portal reads it', () => {
     // comment status changes are true. Claude may ask the author once more before calling
     // them; that is accepted, and an honest annotation is what the directory review checks.
     // To add a tool to the additive list, it has to really leave existing content untouched.
-    const ADDITIVE = new Set(['create_book', 'create_file', 'append_to_file', 'create_note', 'create_comment', 'analyze_chapter']);
+    const ADDITIVE = new Set(['create_book', 'create_file', 'append_to_file', 'create_note', 'create_comment', 'add_memory', 'restore_memory', 'analyze_chapter']);
 
     const writers = tools.filter((t) => !t.annotations?.readOnlyHint);
     expect(writers.length).toBeGreaterThanOrEqual(16);
