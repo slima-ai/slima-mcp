@@ -376,6 +376,15 @@ export interface McpFileDeleteResponse {
   deletedDescendants?: number;
 }
 
+/** POST /mcp/files/restore（iss_ubxehriot41voxib） */
+export interface McpFileRestoreResponse {
+  commit: Commit;
+  /** The restored file gets a NEW token — the deleted one is never reused (Rails Gotcha #16). */
+  fileToken: string;
+  /** The commit the content was taken from (cmt_…). */
+  restoredFrom: string;
+}
+
 export interface McpFileAppendResponse {
   commit: Commit;
 }

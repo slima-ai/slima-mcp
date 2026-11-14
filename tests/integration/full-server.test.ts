@@ -63,7 +63,7 @@ const EXPECTED_TOOLS = [
   // beta reader
   'list_personas', 'analyze_chapter', 'get_reader_test',
   // files
-  'read_file', 'write_file', 'edit_file', 'create_file', 'delete_file', 'append_to_file',
+  'read_file', 'write_file', 'edit_file', 'create_file', 'delete_file', 'restore_file', 'append_to_file',
   'search_content', 'view_relationship_map',
 ].sort();
 

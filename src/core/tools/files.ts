@@ -311,6 +311,61 @@ ${AI_READONLY_WARNING}`,
     }
   );
 
+
+  // === restore_file === (iss_ubxehriot41voxib)
+  server.tool(
+    'restore_file',
+    `Bring back a file that was deleted (creates a new commit).
+
+Give the exact path the file had. The last version from before it was deleted
+comes back with the same content and the same manuscript/reference kind, and
+any folder it lived in is recreated. Use this instead of rewriting a deleted
+file from memory — a rewrite only looks like the old file.
+
+It never overwrites: if a file already exists at that path it is refused. It
+restores files, not folders — for a deleted folder it lists the files that were
+in it; restore those one at a time. Pass \`from_commit\` only when the author
+wants a specific older version (a cmt_… token).
+${SCRIPT_STUDIO_WRITE_WARNING}`,
+    {
+      book_token: z.string().describe('Book token (e.g., bk_abc123)'),
+      path: z.string().describe('Exact path the deleted file had, e.g. "characters/alice.md" (case-sensitive)'),
+      from_commit: z
+        .string()
+        .optional()
+        .describe('Optional cmt_… token to restore that specific version; omit for the last version before deletion'),
+      commit_message: z.string().optional().describe('Commit message (optional, auto-generated if not provided)'),
+    },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    async ({ book_token, path, from_commit, commit_message }) => {
+      try {
+        const result = await client.restoreFile(book_token, {
+          path,
+          fromCommit: from_commit,
+          commitMessage: commit_message,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: [
+                `Restored ${path} from ${result.restoredFrom}.`,
+                '',
+                `Commit: ${result.commit.token}`,
+                `File token: ${result.fileToken}`,
+              ].join('\n'),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: formatErrorForMcp(error) }],
+          isError: true,
+        };
+      }
+    }
+  );
   // === append_to_file ===
   server.tool(
     'append_to_file',

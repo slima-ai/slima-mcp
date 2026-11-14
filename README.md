@@ -224,7 +224,7 @@ For per-book details, ask your AI client to read the resource `slima://books/{bo
 
 ## Available Tools
 
-39 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
+40 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
 
 ### Start here (teaching)
 
@@ -256,6 +256,7 @@ For per-book details, ask your AI client to read the resource `slima://books/{bo
 | `write_file` | W | Replace the entire content of an existing file |
 | `create_file` | W | Create a new file in a book |
 | `delete_file` | W | Delete a file or an empty folder |
+| `restore_file` | W | Bring a deleted file back from history (never overwrites) |
 | `append_to_file` | W | Append content to the end of a file |
 | `search_content` | R | Search for text across all files |
 | `semantic_search` | R | Find passages by meaning rather than exact words |

@@ -27,6 +27,7 @@ import {
   type McpFileUpdateResponse,
   type McpFileEditResponse,
   type McpFileDeleteResponse,
+  type McpFileRestoreResponse,
   type McpFileAppendResponse,
   type McpSearchResponse,
   type McpFileVisualizeResponse,
@@ -616,6 +617,24 @@ export class SlimaApiClient {
         path: params.path,
         commit_message: params.commitMessage,
         recursive: params.recursive,
+      }
+    );
+  }
+
+  /**
+   * Restore a deleted file from history (iss_ubxehriot41voxib)
+   */
+  async restoreFile(
+    bookToken: string,
+    params: { path: string; fromCommit?: string; commitMessage?: string }
+  ): Promise<McpFileRestoreResponse> {
+    return this.request<McpFileRestoreResponse>(
+      'POST',
+      `/api/v1/books/${bookToken}/mcp/files/restore`,
+      {
+        path: params.path,
+        from_commit: params.fromCommit,
+        commit_message: params.commitMessage,
       }
     );
   }

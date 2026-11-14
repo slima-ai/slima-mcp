@@ -57,6 +57,7 @@ export const TOOL_TITLES = {
   edit_file: 'Edit File',
   create_file: 'Create File',
   delete_file: 'Delete File',
+  restore_file: 'Restore Deleted File',
   append_to_file: 'Append to File',
   view_relationship_map: 'View Relationship Map',
   search_content: 'Search Book Text',

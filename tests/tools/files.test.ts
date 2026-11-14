@@ -14,6 +14,7 @@ describe('File Tools', () => {
     createFile: ReturnType<typeof vi.fn>;
     updateFile: ReturnType<typeof vi.fn>;
     deleteFile: ReturnType<typeof vi.fn>;
+    restoreFile: ReturnType<typeof vi.fn>;
     appendToFile: ReturnType<typeof vi.fn>;
     searchFiles: ReturnType<typeof vi.fn>;
   };
@@ -29,6 +30,7 @@ describe('File Tools', () => {
       createFile: vi.fn(),
       updateFile: vi.fn(),
       deleteFile: vi.fn(),
+      restoreFile: vi.fn(),
       appendToFile: vi.fn(),
       searchFiles: vi.fn(),
     };
@@ -41,12 +43,12 @@ describe('File Tools', () => {
       }).not.toThrow();
     });
 
-    it('should register all 8 file-related tools', () => {
+    it('should register all 9 file-related tools', () => {
       const toolSpy = vi.spyOn(server, 'tool');
 
       registerFileTools(server, mockClient as unknown as SlimaApiClient);
 
-      expect(toolSpy).toHaveBeenCalledTimes(8);
+      expect(toolSpy).toHaveBeenCalledTimes(9);
 
       const toolNames = toolSpy.mock.calls.map((call) => call[0]);
       expect(toolNames).toContain('read_file');
@@ -54,6 +56,7 @@ describe('File Tools', () => {
       expect(toolNames).toContain('edit_file');
       expect(toolNames).toContain('create_file');
       expect(toolNames).toContain('delete_file');
+      expect(toolNames).toContain('restore_file');
       expect(toolNames).toContain('append_to_file');
       expect(toolNames).toContain('search_content');
       expect(toolNames).toContain('view_relationship_map');
@@ -161,6 +164,47 @@ describe('File Tools', () => {
       const result = await handler({ book_token: 'bk_1', path: 'a.md' });
 
       expect(result.content[0]!.text).not.toMatch(/item\(s\) inside/);
+    });
+
+    // iss_ubxehriot41voxib — the agent said "my Slima tools cannot restore a version"; now one can.
+    it('registers restore_file and sends path / from_commit / commit_message to the restore endpoint', async () => {
+      const toolSpy = vi.spyOn(server, 'tool');
+      mockClient.restoreFile = vi.fn().mockResolvedValue({
+        commit: { token: 'cmt_new', name: 'Restore file' },
+        fileToken: 'fl_newtoken12345678',
+        restoredFrom: 'cmt_old',
+      });
+
+      registerFileTools(server, mockClient as unknown as SlimaApiClient);
+      const call = toolSpy.mock.calls.find((c) => c[0] === 'restore_file');
+      expect(call).toBeDefined();
+      expect(call?.[2]).toHaveProperty('path');
+      expect(call?.[2]).toHaveProperty('from_commit');
+
+      const handler = call?.[4] as (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
+      const result = await handler({ book_token: 'bk_1', path: 'characters/a.md', from_commit: 'cmt_old' });
+
+      expect(mockClient.restoreFile).toHaveBeenCalledWith('bk_1', {
+        path: 'characters/a.md',
+        fromCommit: 'cmt_old',
+        commitMessage: undefined,
+      });
+      expect(result.content[0]!.text).toContain('Restored characters/a.md from cmt_old');
+      expect(result.content[0]!.text).toContain('fl_newtoken12345678');
+    });
+
+    it('surfaces a refused restore (e.g. FILE_EXISTS) as an error the model can read', async () => {
+      const toolSpy = vi.spyOn(server, 'tool');
+      mockClient.restoreFile = vi.fn().mockRejectedValue(new Error('characters/a.md already exists.'));
+
+      registerFileTools(server, mockClient as unknown as SlimaApiClient);
+      const handler = toolSpy.mock.calls.find((c) => c[0] === 'restore_file')?.[4] as (
+        args: Record<string, unknown>
+      ) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+      const result = await handler({ book_token: 'bk_1', path: 'characters/a.md' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('already exists');
     });
 
     it('should register append_to_file with correct parameters', () => {
