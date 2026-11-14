@@ -80,6 +80,20 @@ describe('Structured file tools', () => {
     }
   });
 
+  // iss_hsw3qzrcjzaxyikt — Rails' timeline executor (feat/iss-hsw3qzrc-timeline-tags 5db996fd) takes tag NAMES.
+  // A model that is never told the parameter names cannot use them; one told it may invent tags.
+  it('teaches update_timeline to tag by name, and that it cannot create a tag', () => {
+    const description = registered.get('update_timeline')!.description;
+
+    expect(description).toContain('add_tags');
+    expect(description).toContain('remove_tags');
+    expect(description).toContain('`axis`');
+    expect(description).toMatch(/cannot create a tag/i);
+    expect(description).toContain('＋ 標籤');
+    // the other types are not taught about tags
+    expect(registered.get('update_beat_board')!.description).not.toContain('add_tags');
+  });
+
   it('sends the operations through untouched', async () => {
     client.applyStructuredOps.mockResolvedValue(ok());
     const operations = [{ op: 'add_act', name: 'Act Two', op_ref: 'A2' }];
