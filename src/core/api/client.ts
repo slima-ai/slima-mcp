@@ -379,6 +379,40 @@ export class SlimaApiClient {
     return this.request('POST', `${memoryBase(params)}/entries/${encodeURIComponent(params.entryId)}/restore`);
   }
 
+  // === Media (iss_tq07rttkofkm2381 / iss_8ra4aqwgliryabow) ===
+  // The same three-step R2 upload the app uses; storage URLs are pre-signed, so the PUT/GET to
+  // them carries no Slima token.
+
+  async listMedia(bookToken: string): Promise<MediaAsset[]> {
+    return this.request<MediaAsset[]>('GET', `/api/v1/books/${bookToken}/media`);
+  }
+
+  /** Read URL for one image. Rails camelCases the token key (med_ab → medAb); accept either. */
+  async mediaReadUrl(bookToken: string, mediaToken: string): Promise<{ url: string; mimeType: string } | null> {
+    const results = await this.request<Record<string, { url: string; mimeType: string } | null>>(
+      'POST',
+      `/api/v1/books/${bookToken}/media/urls`,
+      { tokens: [mediaToken] }
+    );
+    const camel = mediaToken.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
+    return results[camel] ?? results[mediaToken] ?? null;
+  }
+
+  async requestMediaUpload(
+    bookToken: string,
+    params: { filename: string; mimeType: string; size: number }
+  ): Promise<{ token: string; uploadUrl: string }> {
+    return this.request('POST', `/api/v1/books/${bookToken}/media/upload_url`, {
+      filename: params.filename,
+      mime_type: params.mimeType,
+      size: params.size,
+    });
+  }
+
+  async confirmMedia(bookToken: string, mediaToken: string): Promise<MediaAsset> {
+    return this.request<MediaAsset>('POST', `/api/v1/books/${bookToken}/media/${mediaToken}/confirm`);
+  }
+
   async listNotes(bookToken: string): Promise<unknown> {
     return this.request('GET', `/api/v1/books/${bookToken}/notes`);
   }
@@ -754,4 +788,15 @@ export function memoryBase(target: MemoryTarget): string {
   if (target.layer === 'account') return '/api/v1/users/me/ai-memory';
   if (!target.bookToken) throw new Error('book_token is required for book memory');
   return `/api/v1/books/${target.bookToken}/ai-memory`;
+}
+
+// === Media types (iss_tq07rttkofkm2381) ===
+
+export interface MediaAsset {
+  token: string;
+  filename: string;
+  size: number;
+  status: string;
+  mimeType: string;
+  createdAt: string;
 }

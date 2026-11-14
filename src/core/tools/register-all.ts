@@ -9,13 +9,19 @@ import { registerContentTools } from './content.js';
 import { registerBetaReaderTools } from './beta-reader.js';
 import { registerFileTools } from './files.js';
 import { registerStructuredTools } from './structured.js';
+import { registerImageTools, type ImageToolOptions } from './images.js';
 import { withToolTitles } from './titles.js';
 
 /**
  * The one list of tool groups. The CLI (stdio) and the Worker (HTTP) both call this,
  * so they cannot drift apart and neither can forget to attach titles.
  */
-export function registerAllTools(server: McpServer, client: SlimaApiClient, logger: Logger): void {
+export function registerAllTools(
+  server: McpServer,
+  client: SlimaApiClient,
+  logger: Logger,
+  options: { images?: ImageToolOptions } = {}
+): void {
   withToolTitles(server);
 
   // Teaching first: it is what an AI should reach for before anything else,
@@ -29,4 +35,5 @@ export function registerAllTools(server: McpServer, client: SlimaApiClient, logg
   registerBetaReaderTools(server, client, logger);
   registerFileTools(server, client);
   registerStructuredTools(server, client);
+  registerImageTools(server, client, options.images);
 }

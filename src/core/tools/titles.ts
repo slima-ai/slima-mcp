@@ -66,6 +66,8 @@ export const TOOL_TITLES = {
   restore_file: 'Restore Deleted File',
   append_to_file: 'Append to File',
   view_relationship_map: 'View Relationship Map',
+  view_image: 'View Image',
+  upload_image: 'Upload Image',
   search_content: 'Search Book Text',
   // Structured file types (field-level writes)
   update_beat_board: 'Update Beat Board',

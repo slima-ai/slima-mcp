@@ -7,5 +7,6 @@ export { registerTeachingTools } from './teaching.js';
 export { registerTeamTools } from './teams.js';
 export { registerWorkspaceTools } from './workspace.js';
 export { registerMemoryTools } from './memory.js';
+export { registerImageTools } from './images.js';
 export { registerAllTools } from './register-all.js';
 export { TOOL_TITLES } from './titles.js';

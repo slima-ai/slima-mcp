@@ -224,7 +224,7 @@ For per-book details, ask your AI client to read the resource `slima://books/{bo
 
 ## Available Tools
 
-45 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
+47 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
 
 ### Start here (teaching)
 
@@ -260,6 +260,8 @@ For per-book details, ask your AI client to read the resource `slima://books/{bo
 | `append_to_file` | W | Append content to the end of a file |
 | `search_content` | R | Search for text across all files |
 | `semantic_search` | R | Find passages by meaning rather than exact words |
+| `view_image` | R | Look at an image stored in a book, or list the book's images |
+| `upload_image` | W | Store an image from a public URL (or, locally, a file) and get the line to put in a chapter |
 
 Every write is a commit in the book's version history, so it can be reviewed and reverted.
 
