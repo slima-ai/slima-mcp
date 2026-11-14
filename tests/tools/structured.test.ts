@@ -64,6 +64,17 @@ describe('Structured file tools', () => {
     for (const name of registered.keys()) expect(name).toMatch(VERBS);
   });
 
+  // iss_z2ccrm6z: chapter cards are placed by path; a model that sends a token, or thinks
+  // unplacing deletes the chapter, is the failure this pins against.
+  it('teaches update_beat_board to place and unplace chapter cards by path', () => {
+    const description = registered.get('update_beat_board')!.description;
+    expect(description).toMatch(/place_file, unplace_file/);
+    expect(description).toMatch(/"op": "place_file", "file": "[^"]+\.md"/);
+    expect(description).toMatch(/never a token/i);
+    expect(description).toMatch(/`beat_id` OR `act_id` \(not both/);
+    expect(description).toMatch(/never touched or deleted/i);
+  });
+
   it('tells the model this is the only write path for the type', () => {
     const description = registered.get('update_beat_board')!.description;
     expect(description).toMatch(/ONLY way to write this file type/i);
