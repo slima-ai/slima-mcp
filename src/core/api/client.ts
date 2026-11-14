@@ -343,6 +343,42 @@ export class SlimaApiClient {
 
   // === Notes and comments ===================================================
 
+  // === Coach memory (iss_vxkolpj3ykes4cgu) ===
+  // Rails serializes these hashes with deep camelCase keys (worldRules, deletedAt, bookTitle).
+
+  async getAccountMemory(includeDeleted?: boolean): Promise<MemoryLayer> {
+    return this.request<MemoryLayer>('GET', `/api/v1/users/me/ai-memory${includeDeleted ? '?include_deleted=true' : ''}`);
+  }
+
+  async getBookMemory(bookToken: string, includeDeleted?: boolean): Promise<Record<string, MemoryEntry[]>> {
+    return this.request<Record<string, MemoryEntry[]>>(
+      'GET',
+      `/api/v1/books/${bookToken}/ai-memory${includeDeleted ? '?include_deleted=true' : ''}`
+    );
+  }
+
+  async addMemory(params: MemoryTarget & { field: string; text: string }): Promise<MemoryEntry> {
+    const res = await this.request<{ entry: MemoryEntry }>('POST', `${memoryBase(params)}/entries`, {
+      field: params.field,
+      text: params.text,
+    });
+    return res.entry;
+  }
+
+  async editMemory(params: MemoryTarget & { entryId: string; text: string }): Promise<unknown> {
+    return this.request('PATCH', `${memoryBase(params)}/entries/${encodeURIComponent(params.entryId)}`, {
+      content: params.text,
+    });
+  }
+
+  async deleteMemory(params: MemoryTarget & { entryId: string }): Promise<unknown> {
+    return this.request('DELETE', `${memoryBase(params)}/entries/${encodeURIComponent(params.entryId)}`);
+  }
+
+  async restoreMemory(params: MemoryTarget & { entryId: string }): Promise<unknown> {
+    return this.request('POST', `${memoryBase(params)}/entries/${encodeURIComponent(params.entryId)}/restore`);
+  }
+
   async listNotes(bookToken: string): Promise<unknown> {
     return this.request('GET', `/api/v1/books/${bookToken}/notes`);
   }
@@ -689,4 +725,33 @@ export class SlimaApiClient {
       }
     );
   }
+}
+
+// === Coach memory types (iss_vxkolpj3ykes4cgu) ===
+
+export interface MemoryEntry {
+  id: string;
+  text: string;
+  source?: string;
+  confidence?: 'confirmed' | 'needs_review';
+  createdAt?: string;
+  deletedAt?: string;
+  /** Account entries written inside a book's conversation carry that book's current title. */
+  bookTitle?: string;
+  history?: Array<{ text: string; source?: string; replacedAt?: string }>;
+}
+
+/** Account memory: namespace (global / writingStudio / scriptStudio) → field → entries. */
+export type MemoryLayer = Record<string, Record<string, MemoryEntry[]>>;
+
+export interface MemoryTarget {
+  layer: 'book' | 'account';
+  bookToken?: string;
+}
+
+/** Book memory needs a book; account memory never takes one. */
+export function memoryBase(target: MemoryTarget): string {
+  if (target.layer === 'account') return '/api/v1/users/me/ai-memory';
+  if (!target.bookToken) throw new Error('book_token is required for book memory');
+  return `/api/v1/books/${target.bookToken}/ai-memory`;
 }

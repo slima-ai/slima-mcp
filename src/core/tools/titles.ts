@@ -45,6 +45,12 @@ export const TOOL_TITLES = {
   create_comment: 'Create Comment',
   resolve_comment: 'Resolve Comment',
   reopen_comment: 'Reopen Comment',
+  // Coach memory (iss_vxkolpj3ykes4cgu)
+  get_ai_memory: 'Read Coach Memory',
+  add_memory: 'Add to Coach Memory',
+  edit_memory: 'Edit Coach Memory',
+  delete_memory: 'Delete Coach Memory',
+  restore_memory: 'Restore Coach Memory',
   // Chapters
   get_chapter: 'Get Chapter',
   // AI Beta Reader

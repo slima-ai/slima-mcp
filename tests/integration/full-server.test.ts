@@ -31,6 +31,7 @@ import {
   registerTeachingTools,
   registerTeamTools,
   registerWorkspaceTools,
+  registerMemoryTools,
 } from '../../src/core/tools/index.js';
 
 /** Mirrors the registration order in src/cli/server.ts and src/worker/mcp-handler.ts. */
@@ -39,6 +40,7 @@ function registerEverything(server: McpServer, client: SlimaApiClient): void {
   registerTeachingTools(server, client);
   registerTeamTools(server, client);
   registerWorkspaceTools(server, client);
+  registerMemoryTools(server, client);
   registerContentTools(server, client);
   registerBetaReaderTools(server, client);
   registerFileTools(server, client);
@@ -58,6 +60,8 @@ const EXPECTED_TOOLS = [
   // workspace
   'list_notes', 'create_note', 'list_comments', 'create_comment', 'resolve_comment',
   'reopen_comment', 'semantic_search',
+  // coach memory (iss_vxkolpj3ykes4cgu)
+  'get_ai_memory', 'add_memory', 'edit_memory', 'delete_memory', 'restore_memory',
   // content
   'get_chapter',
   // beta reader

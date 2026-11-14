@@ -224,7 +224,7 @@ For per-book details, ask your AI client to read the resource `slima://books/{bo
 
 ## Available Tools
 
-40 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
+45 tools. **R** = read-only (never changes your book); **W** = changes something and says so in its description. Reads and writes are always separate tools.
 
 ### Start here (teaching)
 
@@ -284,6 +284,16 @@ Every write is a commit in the book's version history, so it can be reviewed and
 | `create_comment` | W | Leave an editorial comment |
 | `resolve_comment` | W | Mark a comment thread addressed |
 | `reopen_comment` | W | Reopen a resolved comment thread |
+
+### Coach Memory
+
+| Tool | R/W | Description |
+|------|-----|-------------|
+| `get_ai_memory` | R | Read the coach's memory: account layer and this book's layer, printed apart |
+| `add_memory` | W | Add one entry with the coach's own checks (a full field is refused) |
+| `edit_memory` | W | Change one entry; the old text is kept in its history |
+| `delete_memory` | W | Delete one entry (restorable for 30 days) |
+| `restore_memory` | W | Bring back a deleted entry |
 
 ### AI Beta Reader
 
