@@ -60,5 +60,13 @@ export function renderFileRead(result: McpFileReadResponse): string {
     '---',
     '',
     result.content || '(empty file)',
+    ...imageHint(result.content),
   ].join('\n');
+}
+
+/** The images a file points at, and how to look at them (iss_tq07rttkofkm2381). */
+export function imageHint(content: string | undefined | null): string[] {
+  const tokens = [...new Set([...(content ?? '').matchAll(/slima-media:\/\/(med_[a-z0-9]+)/gi)].map((m) => m[1]!))];
+  if (tokens.length === 0) return [];
+  return ['', '---', `Images in this file: ${tokens.join(', ')} — view_image shows one.`];
 }

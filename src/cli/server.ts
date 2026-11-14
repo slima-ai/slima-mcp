@@ -8,6 +8,8 @@ import { registerAllTools } from '../core/tools/index.js';
 import { registerBookSchemaResource } from '../core/resources/index.js';
 import { SERVER_INSTRUCTIONS } from '../core/server-instructions.js';
 import { logger } from '../core/utils/logger.js';
+import { readFile } from 'node:fs/promises';
+import { lookup } from 'node:dns/promises';
 
 declare const __VERSION__: string;
 
@@ -38,7 +40,14 @@ export function createSlimaServer(config: ServerConfig): McpServer {
   );
 
   // Register tools (one shared list for CLI and Worker; attaches titles)
-  registerAllTools(server, client, logger);
+  // Only the local (stdio) build can read the author's files and must check DNS: it runs on their
+  // machine, where a public-looking name can resolve to their router (iss_8ra4aqwgliryabow).
+  registerAllTools(server, client, logger, {
+    images: {
+      readLocalFile: async (path) => new Uint8Array(await readFile(path)),
+      resolveHost: async (host) => (await lookup(host, { all: true })).map((a) => a.address),
+    },
+  });
 
   // Register resources (per-book schema via URI template)
   registerBookSchemaResource(server, client);

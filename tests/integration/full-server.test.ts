@@ -31,6 +31,7 @@ import {
   registerTeachingTools,
   registerTeamTools,
   registerWorkspaceTools,
+  registerImageTools,
 } from '../../src/core/tools/index.js';
 
 /** Mirrors the registration order in src/cli/server.ts and src/worker/mcp-handler.ts. */
@@ -42,6 +43,7 @@ function registerEverything(server: McpServer, client: SlimaApiClient): void {
   registerContentTools(server, client);
   registerBetaReaderTools(server, client);
   registerFileTools(server, client);
+  registerImageTools(server, client);
 }
 
 /**
@@ -65,6 +67,8 @@ const EXPECTED_TOOLS = [
   // files
   'read_file', 'write_file', 'edit_file', 'create_file', 'delete_file', 'append_to_file',
   'search_content', 'view_relationship_map',
+  // images (iss_tq07rttkofkm2381)
+  'view_image', 'upload_image',
 ].sort();
 
 describe('Integration: Full Server Setup', () => {
