@@ -59,10 +59,18 @@ const TYPES: StructuredType[] = [
     tool: 'update_beat_board',
     extension: '.beats',
     noun: 'beat board',
-    ops: 'add_act, update_act, remove_act, add_beat, update_beat, remove_beat, move_beat',
+    ops: 'add_act, update_act, remove_act, add_beat, update_beat, remove_beat, move_beat, place_file, unplace_file',
     example:
       '{"op": "add_act", "name": "Act Two", "op_ref": "A2"}, ' +
-      '{"op": "add_beat", "title": "The turn", "act_id": "@A2"}',
+      '{"op": "add_beat", "title": "The turn", "act_id": "@A2", "op_ref": "B1"}, ' +
+      '{"op": "place_file", "file": "Chapters/Chapter 3.md", "beat_id": "@B1"}',
+    // iss_z2ccrm6z — matches Rails Mcp::StructuredOps::Beats (feat/iss-z2ccrm6z-beats-place-file 7ebf1a75).
+    extra:
+      '**Chapter cards go by PATH.** `place_file` takes `file` — the path exactly as get_book_structure\n' +
+      'shows it, never a token or id — plus `beat_id` OR `act_id` (not both; neither = unassigned). Only\n' +
+      '.md / .markdown / .txt files. A file already on the board is moved, not duplicated; the card goes\n' +
+      'last in its beat or act. `unplace_file` takes `file` and takes the card off the board — the file\n' +
+      'itself is never touched or deleted.',
   },
   {
     tool: 'update_timeline',
